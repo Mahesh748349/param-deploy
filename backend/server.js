@@ -251,6 +251,12 @@ app.post('/api/synthesize', async (req, res) => {
     return res.status(400).json({ error: 'Query and text_results are required.' });
   }
 
+  const cleanQuery = typeof query === 'string' ? query.trim() : '';
+  if (!cleanQuery) {
+    return res.status(400).json({ error: 'Query cannot be empty.' });
+  }
+
+
   if (!GEMINI_API_KEY) {
     return res.json({
       query,
