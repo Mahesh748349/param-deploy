@@ -1,21 +1,24 @@
 import React from 'react';
-import { AlertCircle, Loader2, X } from 'lucide-react';
+import { AlertCircle, Loader2, Info, X } from 'lucide-react';
 
-export default function StatusBanner({ error, isSpinningUp, onDismiss }) {
-  if (!error && !isSpinningUp) return null;
+export default function StatusBanner({ error, notice, isSpinningUp, onDismiss }) {
+  if (!error && !notice && !isSpinningUp) return null;
+
+  const isError = Boolean(error);
+  const isNotice = Boolean(!error && notice);
 
   return (
-    <div className={`status-banner ${error ? 'banner-error' : 'banner-warning'}`}>
+    <div className={`status-banner ${isError ? 'banner-error' : isNotice ? 'banner-info' : 'banner-warning'}`}>
       <div className="banner-content">
-        {error ? (
+        {isError ? (
           <AlertCircle size={16} className="banner-icon" />
+        ) : isNotice ? (
+          <Info size={16} className="banner-icon" />
         ) : (
           <Loader2 size={16} className="spinner banner-icon" />
         )}
         <div className="banner-text">
-          {error
-            ? error
-            : 'Connecting to hosted retrieval instance (Render free tier instances may take 30-50s to wake up)...'}
+          {error || notice || 'Connecting to hosted retrieval instance (Render free tier instances may take 30-50s to wake up)...'}
         </div>
       </div>
       {onDismiss && (

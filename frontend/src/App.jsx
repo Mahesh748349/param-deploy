@@ -20,6 +20,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [isSpinningUp, setIsSpinningUp] = useState(false);
   const [error, setError] = useState(null);
+  const [notice, setNotice] = useState(null);
   const [health, setHealth] = useState(null);
   const [selectedSource, setSelectedSource] = useState('');
   const [showSynthesis, setShowSynthesis] = useState(false);
@@ -65,6 +66,7 @@ export default function App() {
 
     setLoading(true);
     setError(null);
+    setNotice(null);
     setIsSpinningUp(false);
 
     // Warm-up timeout indicator for Render
@@ -84,6 +86,9 @@ export default function App() {
 
       setResults(data.text_results || []);
       setMeta(data);
+      if (data._notice) {
+        setNotice(data._notice);
+      }
 
       // Save to history
       setHistory((prev) => {
@@ -114,8 +119,12 @@ export default function App() {
       <main className="main-content">
         <StatusBanner
           error={error}
+          notice={notice}
           isSpinningUp={isSpinningUp}
-          onDismiss={() => setError(null)}
+          onDismiss={() => {
+            setError(null);
+            setNotice(null);
+          }}
         />
 
         <SearchBar
