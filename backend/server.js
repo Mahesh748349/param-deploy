@@ -9,6 +9,7 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 const PARAM_SERVICE_URL = (process.env.PARAM_SERVICE_URL || 'https://param-retrieval.onrender.com').replace(/\/$/, '');
 const PARAM_READ_KEY = process.env.PARAM_READ_KEY?.trim() || '';
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY?.trim() || '';
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS 
   ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim()) 
   : ['http://localhost:3000', 'http://127.0.0.1:3000'];
@@ -20,12 +21,11 @@ app.disable('x-powered-by');
 app.set('trust proxy', 1);
 
 // Security: Rate Limiting to prevent brute-force or API exhaustion
-// Allows up to 60 retrieval requests per minute per IP address
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
   max: 60, // Limit each IP to 60 requests per windowMs
-  standardHeaders: true, // Return rate limit info in `RateLimit-*` headers
-  legacyHeaders: false, // Disable `X-RateLimit-*` headers
+  standardHeaders: true,
+  legacyHeaders: false,
   message: {
     error: 'Too many requests',
     message: 'Too many search requests from this IP. Please wait a minute and try again.'
@@ -33,20 +33,15 @@ const apiLimiter = rateLimit({
 });
 
 // Security: CORS configuration
-// If ALLOWED_ORIGINS is set, restrict access to your Netlify domain + local dev
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (like mobile apps, curl, or server-to-server)
     if (!origin) return callback(null, true);
-    
     if (process.env.ALLOWED_ORIGINS) {
       if (ALLOWED_ORIGINS.includes(origin)) {
         return callback(null, true);
       }
       return callback(new Error('Cross-Origin Request Blocked by Security Policy'));
     }
-    
-    // In dev or default, allow origin
     return callback(null, true);
   },
   methods: ['GET', 'POST', 'OPTIONS'],
@@ -54,11 +49,9 @@ app.use(cors({
 }));
 
 app.use(express.json({ limit: '1mb' }));
-
-// Apply rate limiting to all /api/ routes
 app.use('/api/', apiLimiter);
 
-// Request logging (sanitized, NEVER logs API keys)
+// Request logging
 app.use((req, res, next) => {
   const start = Date.now();
   res.on('finish', () => {
@@ -102,6 +95,7 @@ const handleHealth = async (req, res) => {
     timestamp: new Date().toISOString(),
     config: {
       has_read_key: Boolean(PARAM_READ_KEY),
+      has_gemini_key: Boolean(GEMINI_API_KEY),
       upstream_url: PARAM_SERVICE_URL
     },
     upstream: {
@@ -124,7 +118,6 @@ app.get('/api/health', handleHealth);
 app.post('/api/retrieve', async (req, res) => {
   const { query, top_k = 5, scope = 'text' } = req.body || {};
 
-  // Input Validation
   if (!query || typeof query !== 'string' || query.trim().length === 0) {
     return res.status(400).json({
       error: 'Invalid request',
@@ -140,7 +133,6 @@ app.post('/api/retrieve', async (req, res) => {
     });
   }
 
-  // Verify server-side secret key
   if (!PARAM_READ_KEY) {
     return res.status(401).json({
       error: 'Unauthorized',
@@ -156,7 +148,7 @@ app.post('/api/retrieve', async (req, res) => {
   const startTime = Date.now();
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 65000); // 65s timeout for Render cold-starts
+    const timeout = setTimeout(() => controller.abort(), 65000);
 
     const upstreamResponse = await fetch(`${PARAM_SERVICE_URL}/v1/retrieve`, {
       method: 'POST',
@@ -208,40 +200,95 @@ app.post('/api/retrieve', async (req, res) => {
 });
 
 /**
- * Synthesize
+ * Synthesize (Real RAG using Google Gemini 1.5 Flash)
  * POST /api/synthesize
+ * Body: { query: string, text_results: Array }
  */
-app.post('/api/synthesize', (req, res) => {
+app.post('/api/synthesize', async (req, res) => {
   const { query, text_results } = req.body || {};
   if (!query || !Array.isArray(text_results) || text_results.length === 0) {
-    return res.status(400).json({ error: 'Query and text_results are required for synthesis.' });
+    return res.status(400).json({ error: 'Query and text_results are required.' });
   }
 
-  const sources = [...new Set(text_results.map(r => r.source).filter(Boolean))];
-  const totalChunks = text_results.length;
+  // If user hasn't added GEMINI_API_KEY yet, provide clear instruction
+  if (!GEMINI_API_KEY) {
+    return res.json({
+      query,
+      summary: "⚠️ **Gemini API Key Required for AI Answers**\n\nTo enable real-time dynamic AI answers, add `GEMINI_API_KEY` to your environment variables in Render (or in `backend/.env` locally).\n\nYou can grab a free key in 30 seconds from **[aistudio.google.com](https://aistudio.google.com/)**.",
+      is_configured: false
+    });
+  }
 
-  const keyFindings = text_results.slice(0, 3).map((r) => {
-    const clean = r.text.replace(/^Source:.*?;\s*/i, '').trim();
-    const firstSentence = clean.split(/(?<=[.!?])\s+/)[0] || clean.slice(0, 160);
-    return `• ${firstSentence}`;
-  });
+  try {
+    // Format retrieved evidence chunks into structured context
+    const evidenceContext = text_results.map((r, i) => {
+      const attrs = r.attributes ? JSON.stringify(r.attributes) : '';
+      return `[Record #${i + 1} from ${r.source} (${r.locator || 'row'})]:
+Content: ${r.text}
+Metadata: ${attrs}`;
+    }).join('\n\n');
 
-  const summary = `Based on ${totalChunks} relevant record(s) retrieved from ${sources.join(', ')}:
+    const systemPrompt = `You are an expert telemetry and analytics assistant for the Param Knowledge System.
+A user asked the following question:
+"${query}"
 
-${keyFindings.join('\n\n')}
+Below are the most relevant retrieved ground-truth records from the indexed dataset:
+${evidenceContext}
 
-*Key takeaway:* Telemetry records indicate direct correlation with "${query}".`;
+Instructions:
+1. Directly, accurately, and conversationally answer the user's specific question using the provided records above.
+2. If the user asks for specific metrics (e.g. durations, button presses, exhibit names, dates), state the exact numbers clearly and use **bold formatting**.
+3. If the retrieved records only partially answer the question or describe a specific exhibit (e.g. color-perception), explain clearly what the evidence demonstrates.
+4. Keep the answer professional, natural, and concise (2 to 3 paragraphs max).`;
 
-  return res.json({
-    query,
-    summary,
-    sources_consulted: sources,
-    chunks_analyzed: totalChunks
-  });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000); // 20s timeout for Gemini
+
+    const geminiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: systemPrompt }] }],
+          generationConfig: {
+            temperature: 0.2,
+            maxOutputTokens: 600
+          }
+        }),
+        signal: controller.signal
+      }
+    );
+
+    clearTimeout(timeout);
+
+    if (!geminiRes.ok) {
+      const errData = await geminiRes.json().catch(() => ({}));
+      console.error('[Gemini Error]', errData);
+      throw new Error(errData.error?.message || `Gemini API returned status ${geminiRes.status}`);
+    }
+
+    const data = await geminiRes.json();
+    const answer = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No response generated.';
+
+    return res.json({
+      query,
+      summary: answer,
+      model: 'gemini-1.5-flash',
+      is_configured: true
+    });
+  } catch (err) {
+    console.error('[Synthesize Error]', err.message);
+    return res.status(500).json({
+      error: 'Gemini synthesis failed',
+      message: err.message
+    });
+  }
 });
 
 app.listen(PORT, () => {
   console.log(`Param Retrieval Backend listening on port ${PORT}`);
   console.log(`Upstream URL: ${PARAM_SERVICE_URL}`);
   console.log(`PARAM_READ_KEY configured: ${Boolean(PARAM_READ_KEY)}`);
+  console.log(`GEMINI_API_KEY configured: ${Boolean(GEMINI_API_KEY)}`);
 });

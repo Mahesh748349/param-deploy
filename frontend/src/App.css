@@ -382,6 +382,17 @@
   gap: 0.5rem;
 }
 
+.gemini-badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  background: rgba(99, 102, 241, 0.15);
+  color: #a5b4fc;
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  padding: 0.15rem 0.45rem;
+  border-radius: var(--radius-full);
+}
+
 .synthesis-title {
   font-size: 0.95rem;
   font-weight: 700;
@@ -406,6 +417,24 @@
   gap: 0.65rem;
   color: var(--text-secondary);
   font-size: 0.85rem;
+}
+
+.synthesis-error {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #f87171;
+  font-size: 0.85rem;
+}
+
+.synthesis-footer {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 0.6rem;
 }
 
 /* --------------------------------------------------------------------------
