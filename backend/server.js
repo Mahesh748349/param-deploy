@@ -61,45 +61,6 @@ app.use((req, res, next) => {
   next();
 });
 
-// Cache the active Gemini model name to avoid repeated lookups
-let cachedGeminiModel = null;
-
-async function getActiveGeminiModel(apiKey) {
-  if (cachedGeminiModel) return cachedGeminiModel;
-
-  try {
-    const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
-    if (listRes.ok) {
-      const data = await listRes.json();
-      const models = data.models || [];
-      
-      // Preferred active models in priority order (gemini-3.6-flash is recommended by Google)
-      const preferred = [
-        'gemini-3.6-flash',
-        'gemini-3.8-flash',
-        'gemini-3-flash',
-        'gemini-2.0-flash'
-      ];
-
-      for (const pref of preferred) {
-        const found = models.find(m => 
-          m.name?.toLowerCase().includes(pref) && 
-          m.supportedGenerationMethods?.includes('generateContent')
-        );
-        if (found) {
-          cachedGeminiModel = found.name;
-          console.log(`[Gemini] Selected active model: ${cachedGeminiModel}`);
-          return cachedGeminiModel;
-        }
-      }
-    }
-  } catch (err) {
-    console.warn('[Gemini] ListModels check warning:', err.message);
-  }
-
-  // Google's explicitly recommended active model
-  return 'models/gemini-3.6-flash';
-}
 
 
 /**
@@ -208,25 +169,25 @@ app.post('/api/retrieve', async (req, res) => {
     clearTimeout(timeout);
     const latency = Date.now() - startTime;
 
-    if (!upstreamResponse.ok) {
-      let details = {};
-      try {
-        details = await upstreamResponse.json();
-      } catch {
-        details = { raw: await upstreamResponse.text() };
-      }
+    const rawText = await upstreamResponse.text();
+    let upstreamData = {};
+    try {
+      upstreamData = JSON.parse(rawText);
+    } catch {
+      upstreamData = { raw: rawText };
+    }
 
-      console.error(`[Retrieve] Upstream HTTP ${upstreamResponse.status}:`, details);
+    if (!upstreamResponse.ok) {
+      console.error(`[Retrieve] Upstream HTTP ${upstreamResponse.status}:`, upstreamData);
       return res.status(upstreamResponse.status).json({
         error: 'Upstream retrieval service error',
         status: upstreamResponse.status,
-        details
+        details: upstreamData
       });
     }
 
-    const data = await upstreamResponse.json();
     return res.json({
-      ...data,
+      ...upstreamData,
       _latency_ms: latency
     });
   } catch (err) {
@@ -241,7 +202,7 @@ app.post('/api/retrieve', async (req, res) => {
 });
 
 /**
- * Synthesize (Real RAG using Google Gemini with dynamic model resolution)
+ * Synthesize (Real RAG using Google Gemini with dynamic model resolution and resilient fallback)
  * POST /api/synthesize
  * Body: { query: string, text_results: Array }
  */
@@ -256,7 +217,6 @@ app.post('/api/synthesize', async (req, res) => {
     return res.status(400).json({ error: 'Query cannot be empty.' });
   }
 
-
   if (!GEMINI_API_KEY) {
     return res.json({
       query,
@@ -266,9 +226,6 @@ app.post('/api/synthesize', async (req, res) => {
   }
 
   try {
-    // Dynamically get the active model name supported by the user's API key
-    const modelPath = await getActiveGeminiModel(GEMINI_API_KEY);
-
     // Format retrieved evidence chunks into structured context
     const evidenceContext = text_results.map((r, i) => {
       const attrs = r.attributes ? JSON.stringify(r.attributes) : '';
@@ -287,54 +244,87 @@ User Question:
 
 Please provide a detailed, natural English answer to the user's question based strictly on the database records above:`;
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 20000);
+    // Candidate models in preference order (with fallback if one is overloaded or retired)
+    const candidateModels = [
+      'models/gemini-3.6-flash',
+      'models/gemini-2.0-flash',
+      'models/gemini-2.0-flash-lite'
+    ];
 
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/${modelPath}:generateContent?key=${GEMINI_API_KEY}`;
-    console.log(`[Gemini] Calling ${geminiUrl.replace(/key=.*$/, 'key=***')}`);
+    let lastError = null;
+    let answer = null;
+    let usedModel = null;
 
-    const geminiRes = await fetch(geminiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        system_instruction: {
-          parts: [{ text: systemInstruction }]
-        },
-        contents: [
-          {
-            role: "user",
-            parts: [{ text: userMessage }]
-          }
-        ],
-        generationConfig: {
-          temperature: 0.3,
-          maxOutputTokens: 1200
-        }
-      }),
-      signal: controller.signal
-    });
-
-
-    clearTimeout(timeout);
-
-    if (!geminiRes.ok) {
-      let errData = {};
+    for (const modelPath of candidateModels) {
       try {
-        errData = await geminiRes.json();
-      } catch {
-        errData = { raw: await geminiRes.text() };
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 20000);
+
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/${modelPath}:generateContent?key=${GEMINI_API_KEY}`;
+        console.log(`[Gemini] Attempting ${modelPath}...`);
+
+        const geminiRes = await fetch(geminiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            system_instruction: {
+              parts: [{ text: systemInstruction }]
+            },
+            contents: [
+              {
+                role: "user",
+                parts: [{ text: userMessage }]
+              }
+            ],
+            generationConfig: {
+              temperature: 0.3,
+              maxOutputTokens: 1200
+            }
+          }),
+          signal: controller.signal
+        });
+
+        clearTimeout(timeout);
+
+        const rawResText = await geminiRes.text();
+        let resData = {};
+        try {
+          resData = JSON.parse(rawResText);
+        } catch {
+          resData = { raw: rawResText };
+        }
+
+        if (!geminiRes.ok) {
+          const errMsg = resData.error?.message || `Gemini API returned status ${geminiRes.status}`;
+          console.warn(`[Gemini] ${modelPath} failed (${geminiRes.status}): ${errMsg}`);
+          lastError = new Error(errMsg);
+          // If high demand (503), rate limit (429), or not found (404), try next model
+          if ([503, 429, 404].includes(geminiRes.status)) {
+            continue;
+          }
+          throw lastError;
+        }
+
+        const candidateText = resData.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (candidateText) {
+          answer = candidateText;
+          usedModel = modelPath;
+          break;
+        }
+      } catch (loopErr) {
+        lastError = loopErr;
+        console.warn(`[Gemini] Error with ${modelPath}:`, loopErr.message);
       }
-      console.error('[Gemini Error Response]', errData);
-      throw new Error(errData.error?.message || `Gemini API returned status ${geminiRes.status}`);
     }
 
-    const data = await geminiRes.json();
-    const answer = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No response generated.';
+    if (!answer) {
+      throw lastError || new Error('All candidate Gemini models failed to respond.');
+    }
 
     return res.json({
       query,
       summary: answer,
-      model: modelPath.replace(/^models\//, ''),
+      model: usedModel.replace(/^models\//, ''),
       is_configured: true
     });
   } catch (err) {
