@@ -20,10 +20,10 @@ app.disable('x-powered-by');
 // Trust proxy for Render deployment (needed for rate limiter to see real client IPs)
 app.set('trust proxy', 1);
 
-// Security: Rate Limiting to prevent brute-force or API exhaustion
+// Security: Rate Limiting
 const apiLimiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  max: 60, // Limit each IP to 60 requests per windowMs
+  windowMs: 60 * 1000,
+  max: 60,
   standardHeaders: true,
   legacyHeaders: false,
   message: {
@@ -60,6 +60,45 @@ app.use((req, res, next) => {
   });
   next();
 });
+
+// Cache the active Gemini model name to avoid repeated ListModels lookups
+let cachedGeminiModel = null;
+
+async function getActiveGeminiModel(apiKey) {
+  if (cachedGeminiModel) return cachedGeminiModel;
+
+  try {
+    const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+    if (listRes.ok) {
+      const data = await listRes.json();
+      const models = data.models || [];
+      
+      // Look for active flash model that supports generateContent
+      const flashModel = models.find(m => 
+        m.supportedGenerationMethods?.includes('generateContent') && 
+        m.name?.toLowerCase().includes('flash')
+      );
+      if (flashModel) {
+        cachedGeminiModel = flashModel.name; // e.g. "models/gemini-2.5-flash"
+        console.log(`[Gemini] Auto-detected active model: ${cachedGeminiModel}`);
+        return cachedGeminiModel;
+      }
+
+      // Otherwise look for any model that supports generateContent
+      const anyModel = models.find(m => m.supportedGenerationMethods?.includes('generateContent'));
+      if (anyModel) {
+        cachedGeminiModel = anyModel.name;
+        console.log(`[Gemini] Auto-detected fallback model: ${cachedGeminiModel}`);
+        return cachedGeminiModel;
+      }
+    }
+  } catch (err) {
+    console.warn('[Gemini] ListModels check warning:', err.message);
+  }
+
+  // Safe modern default if listing is restricted
+  return 'models/gemini-2.5-flash';
+}
 
 /**
  * Health Check
@@ -136,7 +175,7 @@ app.post('/api/retrieve', async (req, res) => {
   if (!PARAM_READ_KEY) {
     return res.status(401).json({
       error: 'Unauthorized',
-      message: 'PARAM_READ_KEY is not configured on the backend server. Please configure it in your environment variables.'
+      message: 'PARAM_READ_KEY is not configured on the backend server.'
     });
   }
 
@@ -200,7 +239,7 @@ app.post('/api/retrieve', async (req, res) => {
 });
 
 /**
- * Synthesize (Real RAG using Google Gemini 1.5 Flash)
+ * Synthesize (Real RAG using Google Gemini with dynamic model resolution)
  * POST /api/synthesize
  * Body: { query: string, text_results: Array }
  */
@@ -210,16 +249,18 @@ app.post('/api/synthesize', async (req, res) => {
     return res.status(400).json({ error: 'Query and text_results are required.' });
   }
 
-  // If user hasn't added GEMINI_API_KEY yet, provide clear instruction
   if (!GEMINI_API_KEY) {
     return res.json({
       query,
-      summary: "⚠️ **Gemini API Key Required for AI Answers**\n\nTo enable real-time dynamic AI answers, add `GEMINI_API_KEY` to your environment variables in Render (or in `backend/.env` locally).\n\nYou can grab a free key in 30 seconds from **[aistudio.google.com](https://aistudio.google.com/)**.",
+      summary: "⚠️ **Gemini API Key Required**\n\nTo enable real-time dynamic AI answers, add `GEMINI_API_KEY` to your environment variables in Render (or in `backend/.env` locally).\n\nYou can grab a free key in 30 seconds from **[aistudio.google.com](https://aistudio.google.com/)**.",
       is_configured: false
     });
   }
 
   try {
+    // Dynamically get the active model name supported by the user's API key
+    const modelPath = await getActiveGeminiModel(GEMINI_API_KEY);
+
     // Format retrieved evidence chunks into structured context
     const evidenceContext = text_results.map((r, i) => {
       const attrs = r.attributes ? JSON.stringify(r.attributes) : '';
@@ -236,35 +277,40 @@ Below are the most relevant retrieved ground-truth records from the indexed data
 ${evidenceContext}
 
 Instructions:
-1. Directly, accurately, and conversationally answer the user's specific question using the provided records above.
+1. Directly, accurately, and conversationally answer the user's specific question using ONLY the provided records above.
 2. If the user asks for specific metrics (e.g. durations, button presses, exhibit names, dates), state the exact numbers clearly and use **bold formatting**.
 3. If the retrieved records only partially answer the question or describe a specific exhibit (e.g. color-perception), explain clearly what the evidence demonstrates.
 4. Keep the answer professional, natural, and concise (2 to 3 paragraphs max).`;
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 20000); // 20s timeout for Gemini
+    const timeout = setTimeout(() => controller.abort(), 20000);
 
-    const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: systemPrompt }] }],
-          generationConfig: {
-            temperature: 0.2,
-            maxOutputTokens: 600
-          }
-        }),
-        signal: controller.signal
-      }
-    );
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/${modelPath}:generateContent?key=${GEMINI_API_KEY}`;
+    console.log(`[Gemini] Calling ${geminiUrl.replace(/key=.*$/, 'key=***')}`);
+
+    const geminiRes = await fetch(geminiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: systemPrompt }] }],
+        generationConfig: {
+          temperature: 0.2,
+          maxOutputTokens: 600
+        }
+      }),
+      signal: controller.signal
+    });
 
     clearTimeout(timeout);
 
     if (!geminiRes.ok) {
-      const errData = await geminiRes.json().catch(() => ({}));
-      console.error('[Gemini Error]', errData);
+      let errData = {};
+      try {
+        errData = await geminiRes.json();
+      } catch {
+        errData = { raw: await geminiRes.text() };
+      }
+      console.error('[Gemini Error Response]', errData);
       throw new Error(errData.error?.message || `Gemini API returned status ${geminiRes.status}`);
     }
 
@@ -274,7 +320,7 @@ Instructions:
     return res.json({
       query,
       summary: answer,
-      model: 'gemini-1.5-flash',
+      model: modelPath.replace(/^models\//, ''),
       is_configured: true
     });
   } catch (err) {
