@@ -1,0 +1,12 @@
+.env
+*.db
+*.db-*
+*.sqlite*
+__pycache__/
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+model-cache/
+param-blobs/
+param-vectors/
