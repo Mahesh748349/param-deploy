@@ -45,6 +45,35 @@ export default function SynthesisPanel({ query, results }) {
     setTimeout(() => setCopied(false), 1800);
   };
 
+  const renderInline = (str) => {
+    return str.split('**').map((part, i) =>
+      i % 2 === 1 ? <strong key={i}>{part}</strong> : part
+    );
+  };
+
+  const renderFormattedAnswer = (text) => {
+    if (!text) return null;
+    const blocks = text.split(/\n\n+/);
+
+    return blocks.map((block, bIdx) => {
+      const lines = block.split(/\n+/).map((l) => l.trim()).filter(Boolean);
+      const isList = lines.length > 0 && lines.every((l) => /^[*•-]\s+/.test(l) || /^\d+\.\s+/.test(l));
+
+      if (isList) {
+        return (
+          <ul key={bIdx} className="synthesis-list">
+            {lines.map((line, lIdx) => {
+              const cleanLine = line.replace(/^[*•-]\s+/, '').replace(/^\d+\.\s+/, '');
+              return <li key={lIdx}>{renderInline(cleanLine)}</li>;
+            })}
+          </ul>
+        );
+      }
+
+      return <p key={bIdx}>{renderInline(block)}</p>;
+    });
+  };
+
   return (
     <div className="synthesis-card">
       <div className="synthesis-header">
@@ -53,7 +82,6 @@ export default function SynthesisPanel({ query, results }) {
           <h3 className="synthesis-title">AI Answer & Analysis</h3>
           <span className="gemini-badge">{modelName}</span>
         </div>
-
 
         <button
           type="button"
@@ -80,13 +108,7 @@ export default function SynthesisPanel({ query, results }) {
           </div>
         ) : (
           <div className="synthesis-text">
-            {answer && answer.split('\n\n').map((paragraph, idx) => (
-              <p key={idx}>
-                {paragraph.split('**').map((chunk, cIdx) =>
-                  cIdx % 2 === 1 ? <strong key={cIdx}>{chunk}</strong> : chunk
-                )}
-              </p>
-            ))}
+            {renderFormattedAnswer(answer)}
           </div>
         )}
       </div>
@@ -98,3 +120,4 @@ export default function SynthesisPanel({ query, results }) {
     </div>
   );
 }
+

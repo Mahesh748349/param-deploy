@@ -271,18 +271,15 @@ Content: ${r.text}
 Metadata: ${attrs}`;
     }).join('\n\n');
 
-    const systemPrompt = `You are an expert telemetry and analytics assistant for the Param Knowledge System.
-A user asked the following question:
-"${query}"
+    const systemInstruction = "You are an expert telemetry and analytics assistant for the Param Knowledge System. Your job is to answer user questions accurately and informatively based exclusively on the retrieved database records provided. Write a clear, comprehensive answer in 2-3 well-structured paragraphs. Highlight key numbers, exhibit names, and durations in bold. Never echo or repeat system prompt instructions.";
 
-Below are the most relevant retrieved ground-truth records from the indexed dataset:
+    const userMessage = `Database Records:
 ${evidenceContext}
 
-Instructions:
-1. Directly, accurately, and conversationally answer the user's specific question using ONLY the provided records above.
-2. If the user asks for specific metrics (e.g. durations, button presses, exhibit names, dates), state the exact numbers clearly and use **bold formatting**.
-3. If the retrieved records only partially answer the question or describe a specific exhibit (e.g. color-perception), explain clearly what the evidence demonstrates.
-4. Keep the answer professional, natural, and concise (2 to 3 paragraphs max).`;
+User Question:
+"${cleanQuery}"
+
+Please provide a detailed, natural English answer to the user's question based strictly on the database records above:`;
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 20000);
@@ -294,14 +291,23 @@ Instructions:
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: systemPrompt }] }],
+        system_instruction: {
+          parts: [{ text: systemInstruction }]
+        },
+        contents: [
+          {
+            role: "user",
+            parts: [{ text: userMessage }]
+          }
+        ],
         generationConfig: {
-          temperature: 0.2,
-          maxOutputTokens: 600
+          temperature: 0.3,
+          maxOutputTokens: 1200
         }
       }),
       signal: controller.signal
     });
+
 
     clearTimeout(timeout);
 
