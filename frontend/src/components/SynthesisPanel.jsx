@@ -5,6 +5,7 @@ import { synthesizeEvidence } from '../api';
 export default function SynthesisPanel({ query, results }) {
   const [loading, setLoading] = useState(false);
   const [answer, setAnswer] = useState(null);
+  const [modelName, setModelName] = useState('Gemini 3.6 Flash');
   const [isConfigured, setIsConfigured] = useState(true);
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(false);
@@ -20,6 +21,9 @@ export default function SynthesisPanel({ query, results }) {
       .then((data) => {
         if (!isMounted) return;
         setAnswer(data.summary || 'No answer generated.');
+        if (data.model) {
+          setModelName(data.model.replace(/^models\//, '').replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()));
+        }
         setIsConfigured(data.is_configured !== false);
         setLoading(false);
       })
@@ -47,8 +51,9 @@ export default function SynthesisPanel({ query, results }) {
         <div className="synthesis-title-group">
           <Sparkles size={16} className="text-indigo" />
           <h3 className="synthesis-title">AI Answer & Analysis</h3>
-          <span className="gemini-badge">Gemini 1.5 Flash</span>
+          <span className="gemini-badge">{modelName}</span>
         </div>
+
 
         <button
           type="button"

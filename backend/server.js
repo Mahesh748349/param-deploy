@@ -61,7 +61,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// Cache the active Gemini model name to avoid repeated ListModels lookups
+// Cache the active Gemini model name to avoid repeated lookups
 let cachedGeminiModel = null;
 
 async function getActiveGeminiModel(apiKey) {
@@ -73,32 +73,34 @@ async function getActiveGeminiModel(apiKey) {
       const data = await listRes.json();
       const models = data.models || [];
       
-      // Look for active flash model that supports generateContent
-      const flashModel = models.find(m => 
-        m.supportedGenerationMethods?.includes('generateContent') && 
-        m.name?.toLowerCase().includes('flash')
-      );
-      if (flashModel) {
-        cachedGeminiModel = flashModel.name; // e.g. "models/gemini-2.5-flash"
-        console.log(`[Gemini] Auto-detected active model: ${cachedGeminiModel}`);
-        return cachedGeminiModel;
-      }
+      // Preferred active models in priority order (gemini-3.6-flash is recommended by Google)
+      const preferred = [
+        'gemini-3.6-flash',
+        'gemini-3.8-flash',
+        'gemini-3-flash',
+        'gemini-2.0-flash'
+      ];
 
-      // Otherwise look for any model that supports generateContent
-      const anyModel = models.find(m => m.supportedGenerationMethods?.includes('generateContent'));
-      if (anyModel) {
-        cachedGeminiModel = anyModel.name;
-        console.log(`[Gemini] Auto-detected fallback model: ${cachedGeminiModel}`);
-        return cachedGeminiModel;
+      for (const pref of preferred) {
+        const found = models.find(m => 
+          m.name?.toLowerCase().includes(pref) && 
+          m.supportedGenerationMethods?.includes('generateContent')
+        );
+        if (found) {
+          cachedGeminiModel = found.name;
+          console.log(`[Gemini] Selected active model: ${cachedGeminiModel}`);
+          return cachedGeminiModel;
+        }
       }
     }
   } catch (err) {
     console.warn('[Gemini] ListModels check warning:', err.message);
   }
 
-  // Safe modern default if listing is restricted
-  return 'models/gemini-2.5-flash';
+  // Google's explicitly recommended active model
+  return 'models/gemini-3.6-flash';
 }
+
 
 /**
  * Health Check
