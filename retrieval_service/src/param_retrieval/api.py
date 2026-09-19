@@ -9,12 +9,14 @@ from pydantic import BaseModel, Field
 from .config import Settings
 from .service import Service
 from .state import StaleEvent
+from .filters import SearchFilters
 
 
 class RetrievalRequest(BaseModel):
     query: str = Field(min_length=1, max_length=4000)
     top_k: int = Field(5, ge=1, le=50)
     scope: str = Field("text", pattern="^(text|image|all)$")
+    filters: SearchFilters | None = None
 
 
 class RecordUpdate(BaseModel):
@@ -49,7 +51,7 @@ def create_app(service=None):
         yield
         svc.close()
 
-    app = FastAPI(title="Param Retrieval", version="2.0", lifespan=lifespan,
+    app = FastAPI(title="Param Retrieval", version="3.1", lifespan=lifespan,
                   docs_url=None, redoc_url=None, openapi_url=None)
 
     @app.get("/health")
@@ -69,7 +71,7 @@ def create_app(service=None):
     @app.post("/v1/retrieve", dependencies=[read_access])
     def retrieve(body: RetrievalRequest):
         try:
-            return svc.retrieve(body.query, body.top_k, body.scope)
+            return svc.retrieve(body.query, body.top_k, body.scope, filters=body.filters)
         except ValueError as exc:
             raise HTTPException(422, str(exc))
 

@@ -1,5 +1,11 @@
 # Retrieval API — backend handoff
 
+## 3.1 additions (existing requests remain valid)
+
+Optional request `filters`: `{"source":"Physical Exhibit.xlsx","sheet":"Kinetic Bug","exhibit":"Kinetic Bug"}`. Fields are optional, combined with AND, and require the operator's one-time metadata backfill before use. Source/sheet are exact; exhibit normalizes case, spaces, hyphens and underscores. Filters are NOT inferred from the query automatically. See UPGRADE_SEARCH.md for semantics.
+
+Text hits now include `rerank_score` when reranking is enabled. Keep server result order. Existing `score` still means RRF and should retain that label, but it no longer determines final order. Response `ranking.text` is `reranker` or `rrf`. Reranker scores are not confidence probabilities. Once the operator sets a calibrated cutoff, top_k is a maximum: fewer/zero results are normal. Never pad with unrelated hits; show a no-evidence state when empty. Existing UI can ignore the added fields if it preserves result order.
+
 The service owner supplies an HTTPS base URL and one retrieval key privately. Do not expose the key in frontend/browser code. Call from your backend. Database credentials are not needed.
 
 ## Request

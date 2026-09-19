@@ -11,7 +11,7 @@ from param_retrieval import Service, Settings
 def main():
     load_dotenv()  # Hosting environment variables take precedence over local .env.
     parser = argparse.ArgumentParser()
-    parser.add_argument('command', choices=['check', 'api', 'worker', 'warmup'])
+    parser.add_argument('command', choices=['check', 'api', 'worker', 'warmup', 'backfill-filters'])
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
     cfg = Settings()
@@ -35,10 +35,14 @@ def main():
             svc.embedder.model('text')
             if cfg.vector_backend == 'qdrant':
                 svc.store.sparse_encoder()
+            if svc.reranker:
+                svc.reranker.scores('warmup', [{'text': 'warmup passage'}])
             if os.getenv('PARAM_WARM_IMAGES', 'false').lower() == 'true':
                 svc.embedder.model('image')
                 svc.embedder.model('image_query')
             print('Model warmup complete.', flush=True)
+        elif args.command == 'backfill-filters':
+            print('Backfilled:', svc.store.backfill_filters())
         elif args.command == 'worker':
             while True:
                 try:

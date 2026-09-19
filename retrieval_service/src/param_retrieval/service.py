@@ -12,6 +12,8 @@ from .blobs import Blobs
 from .config import Settings
 from .embeddings import FastEmbedder
 from .fusion import reciprocal_rank_fusion
+from .filters import SearchFilters
+from .reranking import Reranker, rerank_results
 from .parsers import IMAGE_SUFFIXES, PARSERS, parse
 from .state import LostLease, State
 from .vectors import VECTOR_ADAPTERS
@@ -20,7 +22,7 @@ log = logging.getLogger(__name__)
 
 
 class Service:
-    def __init__(self, settings: Settings, store=None, embedder=None, postprocessor=None):
+    def __init__(self, settings: Settings, store=None, embedder=None, postprocessor=None, reranker=None):
         settings.prepare()
         self.settings = settings
         self.state = State(settings.state_url)
@@ -28,6 +30,7 @@ class Service:
         self.store = store or VECTOR_ADAPTERS[settings.vector_backend](settings)
         self.embedder = embedder or FastEmbedder(settings)
         self.postprocessor = postprocessor
+        self.reranker = reranker or (Reranker(settings) if settings.rerank_enabled else None)
         self._run_lock = threading.Lock()
 
     def initialize(self):
@@ -148,23 +151,26 @@ class Service:
                 time.sleep(1)
         return self.state.status(self.settings.index_id)
 
-    def retrieve(self, query, top_k=5, scope="text", process=False):
+    def retrieve(self, query, top_k=5, scope="text", process=False, filters=None):
         if not query.strip() or len(query) > 4000 or not 1 <= top_k <= 50 or scope not in {"text", "image", "all"}:
             raise ValueError("Invalid query, top_k or scope")
         results, limited = {}, False
+        filters = filters if isinstance(filters, SearchFilters) else SearchFilters.model_validate(filters or {})
+        filter_args = {"filters": filters.values()} if filters.values() else {}
         for kind in (["text", "image"] if scope == "all" else [scope]):
             vector = self.embedder.query(kind, query)
-            limit = max(64, top_k * 4)
+            target = max(top_k, self.settings.rerank_candidates) if kind == "text" and self.reranker else top_k
+            limit = max(64, target * 2)
             while True:
-                branches = {"dense": self.store.search(kind, vector, self.settings.dataset, self.settings.index_id, limit)}
+                branches = {"dense": self.store.search(kind, vector, self.settings.dataset, self.settings.index_id, limit, **filter_args)}
                 if kind == "text":
                     branches["lexical"] = self.store.lexical_search(
-                        query, self.settings.dataset, self.settings.index_id, limit)
+                        query, self.settings.dataset, self.settings.index_id, limit, **filter_args)
                 # Validate BOTH arms against one publication-state snapshot before fusion.
                 active = self.state.active({p["doc_id"] for hits in branches.values() for p in hits})
                 current = {name: [p for p in hits if active.get(p["doc_id"]) == p["revision"]]
                            for name, hits in branches.items()}
-                needs_more = any(len(branches[name]) == limit and len(hits) < top_k
+                needs_more = any(len(branches[name]) == limit and len(hits) < target
                                  for name, hits in current.items())
                 if not needs_more or limit >= 1024:
                     limited |= needs_more and limit >= 1024
@@ -174,13 +180,20 @@ class Service:
                 {**p, "score_type": "cosine", "ranks": {"dense": rank},
                  "branch_scores": {"dense": p["score"]}}
                 for rank, p in enumerate(current["dense"], 1)]
+            if kind == "text" and self.reranker:
+                valid = rerank_results(query, valid[:target], self.reranker, self.settings.rerank_min_score)
             results[kind + "_results"] = [{k: p[k] for k in
                 ("id", "score", "source", "locator", "text", "attributes", "blob_id", "revision",
                  "score_type", "ranks", "branch_scores")}
                 for p in valid[:top_k]]
+            if kind == "text" and self.reranker:
+                for result, hit in zip(results["text_results"], valid[:top_k]):
+                    result["rerank_score"] = hit["rerank_score"]
         response = {"request_id": str(uuid.uuid4()), "query": query,
             "dataset": self.settings.dataset, "index_id": self.settings.index_id,
-            "candidate_limit_reached": limited, **results}
+            "candidate_limit_reached": limited,
+            "ranking": {"text": "reranker" if self.reranker else "rrf",
+                        "min_score": self.settings.rerank_min_score if self.reranker else None}, **results}
         if process:
             if self.postprocessor is None:
                 raise ValueError("No postprocessor configured")

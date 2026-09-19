@@ -38,7 +38,7 @@ def service(tmp_path):
     cfg = Settings(state_url=f"sqlite:///{tmp_path / 'state.db'}", blob_root=str(tmp_path / "blobs"),
         local_vector_path=str(tmp_path / "vectors"), model_cache=str(tmp_path / "cache"),
         text_dimension=8, image_dimension=8, batch_size=2, lease_seconds=15,
-        read_key="read-test", ingest_key="write-test")
+        read_key="read-test", ingest_key="write-test", rerank_enabled=False)
     svc = Service(cfg, store=QdrantStore(cfg, sparse_encoder=FakeSparseEncoder()), embedder=FakeEmbedder()).initialize()
     yield svc
     svc.close()

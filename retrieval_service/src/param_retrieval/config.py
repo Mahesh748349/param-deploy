@@ -34,6 +34,11 @@ class Settings(BaseSettings):
     chunk_overlap: int = Field(100, ge=0, le=99_999)
     pipeline_version: str = "3.0-hybrid"
     rrf_k: int = Field(60, ge=1)
+    rerank_enabled: bool = True
+    rerank_model: str = "Xenova/ms-marco-MiniLM-L-6-v2"
+    rerank_candidates: int = Field(64, ge=50, le=200)
+    rerank_batch_size: int = Field(8, ge=1, le=64)
+    rerank_min_score: float | None = Field(None, allow_inf_nan=False)
     read_key: str = ""
     ingest_key: str = ""
     source_root: str = ""

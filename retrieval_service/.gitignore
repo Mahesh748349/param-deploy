@@ -1,4 +1,8 @@
 .env
+.env.*
+!.env.example
+calibration.jsonl
+validation.jsonl
 *.db
 *.db-*
 *.sqlite*

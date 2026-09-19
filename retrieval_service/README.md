@@ -1,5 +1,7 @@
 # Param ingestion and retrieval service
 
+**Search-quality upgrade 3.1:** see [UPGRADE_SEARCH.md](UPGRADE_SEARCH.md) for reranking, optional filters, metadata backfill and calibrated relevance cutoffs. Existing vectors and state schema are preserved. Its ranking/rollout instructions supersede the original RRF-only notes below.
+
 **Deploying the working Colab index? Start with [DEPLOYMENT.md](DEPLOYMENT.md).** Use `deploy.py` for guarded startup and `.env` support. Give the backend team [BACKEND_API.md](BACKEND_API.md), not this internal implementation guide.
 
 All application source is included in the self-contained Colab notebook. No Docker is used or required.
