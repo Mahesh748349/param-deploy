@@ -703,9 +703,63 @@
   color: var(--text-secondary);
 }
 
+/* Plain English Narrative Box */
+.narrative-box {
+  background: var(--bg-tertiary);
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  border-radius: var(--radius-sm);
+  padding: 0.85rem 1.15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.narrative-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #a5b4fc;
+}
+
+.narrative-text {
+  font-size: 0.94rem;
+  line-height: 1.65;
+  color: var(--text-primary);
+}
+
 .card-footer {
   border-top: 1px solid var(--border-subtle);
   padding-top: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.card-footer-buttons {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.raw-record-drawer {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 0.65rem 0.85rem;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.raw-record-drawer pre {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
 .details-toggle {

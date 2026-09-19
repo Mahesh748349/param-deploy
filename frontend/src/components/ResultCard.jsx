@@ -1,11 +1,15 @@
 import React, { useState } from 'react';
-import { FileText, Copy, Check, ChevronDown, ChevronUp, Clock, Touchpad, Calendar, Eye } from 'lucide-react';
+import { FileText, Copy, Check, ChevronDown, ChevronUp, Sparkles, Database, Eye } from 'lucide-react';
+import { generateSingleRecordNarrative, extractRecordData } from '../utils/narrativeEngine';
 
 export default function ResultCard({ result, rank, searchQuery }) {
   const [copied, setCopied] = useState(false);
-  const [expanded, setExpanded] = useState(false);
+  const [showRawData, setShowRawData] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
-  const [showRawRow, setShowRawRow] = useState(false);
+
+  // Generate plain English explanation using the Narrative Engine
+  const narrative = generateSingleRecordNarrative(result);
+  const data = extractRecordData(result);
 
   // Format locator nicely: "row:9558|char:0" -> "Row 9558"
   const formatLocator = (locator) => {
@@ -18,57 +22,11 @@ export default function ResultCard({ result, rank, searchQuery }) {
       .trim();
   };
 
-  // Strip only the leading "Source: filename; row:..." prefix line
-  const cleanSnippetText = (text) => {
-    if (!text) return '';
-    return text.replace(/^Source:\s*[^;]+;\s*(?:row|sheet):[^\n\r]+(?:\r?\n)?/i, '').trim();
-  };
-
-  const bodyText = cleanSnippetText(result.text);
-
   const handleCopy = () => {
-    navigator.clipboard.writeText(result.text || '');
+    navigator.clipboard.writeText(narrative);
     setCopied(true);
     setTimeout(() => setCopied(false), 1800);
   };
-
-  // Check if this is a structured telemetry log
-  const attrs = result.attributes || {};
-  const hasTelemetry = attrs.exhibit_id || attrs.duration_s || attrs.presses;
-
-  // Format duration nicely
-  const formatDuration = (secStr) => {
-    const sec = parseFloat(secStr);
-    if (isNaN(sec)) return secStr;
-    if (sec < 60) return `${sec.toFixed(1)} seconds`;
-    const mins = (sec / 60).toFixed(1);
-    return `${sec.toFixed(1)}s (~${mins} mins)`;
-  };
-
-  // Highlight matching query terms
-  const renderHighlighted = (text, query) => {
-    if (!query || !text) return text;
-    const words = query
-      .trim()
-      .split(/\s+/)
-      .filter((w) => w.length > 2)
-      .map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-
-    if (words.length === 0) return text;
-    const regex = new RegExp(`(${words.join('|')})`, 'gi');
-    const parts = text.split(regex);
-
-    return parts.map((part, i) =>
-      regex.test(part) ? (
-        <mark key={i} className="highlight-mark">{part}</mark>
-      ) : (
-        part
-      )
-    );
-  };
-
-  const isLong = bodyText.length > 280;
-  const displayText = isLong && !expanded ? `${bodyText.slice(0, 280)}...` : bodyText;
 
   return (
     <article className="result-card">
@@ -86,109 +44,83 @@ export default function ResultCard({ result, rank, searchQuery }) {
           type="button"
           className="copy-btn"
           onClick={handleCopy}
-          title="Copy raw record"
+          title="Copy plain English summary"
         >
           {copied ? <Check size={14} className="text-emerald" /> : <Copy size={14} />}
           <span>{copied ? 'Copied' : 'Copy'}</span>
         </button>
       </div>
 
-      {/* Structured Telemetry Card View */}
-      {hasTelemetry ? (
-        <div className="telemetry-card">
-          <div className="telemetry-grid">
-            {attrs.exhibit_id && (
-              <div className="telemetry-item">
-                <span className="telemetry-label">Exhibit / Station</span>
-                <span className="telemetry-value highlight-text">
-                  {attrs.display_name || attrs.exhibit_id}
-                </span>
-              </div>
-            )}
-
-            {attrs.duration_s && (
-              <div className="telemetry-item">
-                <span className="telemetry-label">
-                  <Clock size={12} className="inline-icon" /> Visitor Dwell Time
-                </span>
-                <span className="telemetry-value">
-                  {formatDuration(attrs.duration_s)}
-                </span>
-              </div>
-            )}
-
-            {attrs.presses !== undefined && (
-              <div className="telemetry-item">
-                <span className="telemetry-label">
-                  <Touchpad size={12} className="inline-icon" /> Button / Touch Presses
-                </span>
-                <span className="telemetry-value">
-                  {attrs.presses} interactions
-                </span>
-              </div>
-            )}
-
-            {attrs.started_at && (
-              <div className="telemetry-item">
-                <span className="telemetry-label">
-                  <Calendar size={12} className="inline-icon" /> Session Timestamp
-                </span>
-                <span className="telemetry-value font-mono">
-                  {attrs.started_at.replace('T', ' ').slice(0, 19)} UTC
-                </span>
-              </div>
-            )}
-          </div>
-
-          <button
-            type="button"
-            className="view-raw-btn"
-            onClick={() => setShowRawRow(!showRawRow)}
-          >
-            <Eye size={12} />
-            <span>{showRawRow ? 'Hide raw row' : 'View raw CSV row text'}</span>
-          </button>
-
-          {showRawRow && (
-            <div className="raw-row-box">
-              <code>{renderHighlighted(bodyText, searchQuery)}</code>
-            </div>
-          )}
+      {/* Human-Readable Natural Language Narrative */}
+      <div className="narrative-box">
+        <div className="narrative-badge">
+          <Sparkles size={13} className="text-indigo" />
+          <span>Plain English Summary</span>
         </div>
-      ) : (
-        /* Standard Clean Text View */
-        <div className="card-body">
-          <p className="card-snippet">
-            {renderHighlighted(displayText, searchQuery)}
-          </p>
+        <p className="narrative-text">
+          {narrative}
+        </p>
+      </div>
 
-          {isLong && (
-            <button
-              type="button"
-              className="expand-btn"
-              onClick={() => setExpanded(!expanded)}
-            >
-              {expanded ? (
-                <><span>Show less</span><ChevronUp size={13} /></>
-              ) : (
-                <><span>Show more</span><ChevronDown size={13} /></>
-              )}
-            </button>
+      {/* Structured Telemetry Pills */}
+      {data && Object.keys(data).length > 0 && (
+        <div className="card-tags">
+          {data.exhibit_id && (
+            <span className="meta-tag">
+              <span className="meta-key">Exhibit:</span> {data.display_name || data.exhibit_id}
+            </span>
+          )}
+          {data.duration_s && (
+            <span className="meta-tag">
+              <span className="meta-key">Dwell Time:</span> {data.duration_s}s
+            </span>
+          )}
+          {data.presses !== undefined && (
+            <span className="meta-tag">
+              <span className="meta-key">Presses:</span> {data.presses}
+            </span>
+          )}
+          {data.started_at && (
+            <span className="meta-tag">
+              <span className="meta-key">Date:</span> {data.started_at.slice(0, 10)}
+            </span>
           )}
         </div>
       )}
 
-      {/* Technical details toggle */}
+      {/* Action Footer */}
       <div className="card-footer">
-        <button
-          type="button"
-          className="details-toggle"
-          onClick={() => setShowDetails(!showDetails)}
-        >
-          <span>Retrieval Score & Ranks</span>
-          {showDetails ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-        </button>
+        <div className="card-footer-buttons">
+          {/* Toggle raw JSON/CSV data */}
+          <button
+            type="button"
+            className="details-toggle"
+            onClick={() => setShowRawData(!showRawData)}
+          >
+            <Database size={12} />
+            <span>{showRawData ? 'Hide raw data' : 'View raw record'}</span>
+            {showRawData ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+          </button>
 
+          {/* Toggle technical RRF score & ranks */}
+          <button
+            type="button"
+            className="details-toggle"
+            onClick={() => setShowDetails(!showDetails)}
+          >
+            <span>Retrieval score & details</span>
+            {showDetails ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+          </button>
+        </div>
+
+        {/* Raw Record Drawer */}
+        {showRawData && (
+          <div className="raw-record-drawer">
+            <pre><code>{result.text}</code></pre>
+          </div>
+        )}
+
+        {/* Technical Score Drawer */}
         {showDetails && (
           <div className="details-drawer">
             <div className="detail-item">
