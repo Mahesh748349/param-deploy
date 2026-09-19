@@ -422,9 +422,41 @@
 .synthesis-error {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
   color: #f87171;
   font-size: 0.85rem;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  padding: 0.65rem 0.9rem;
+  border-radius: var(--radius-md);
+}
+
+.synthesis-error-msg {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.synthesis-retry-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.65rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.18);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.synthesis-retry-btn:hover {
+  background: rgba(239, 68, 68, 0.3);
+  color: #ffffff;
 }
 
 .synthesis-footer {

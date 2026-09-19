@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Sparkles, Copy, Check, Loader2, Bot, AlertCircle } from 'lucide-react';
+import { Sparkles, Copy, Check, Loader2, Bot, AlertCircle, RefreshCw } from 'lucide-react';
 import { synthesizeEvidence } from '../api';
 
 export default function SynthesisPanel({ query, results }) {
@@ -10,16 +10,13 @@ export default function SynthesisPanel({ query, results }) {
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(false);
 
-  useEffect(() => {
+  const loadSynthesis = () => {
     if (!query || !results || results.length === 0) return;
-
-    let isMounted = true;
     setLoading(true);
     setError(null);
 
     synthesizeEvidence({ query, text_results: results })
       .then((data) => {
-        if (!isMounted) return;
         setAnswer(data.summary || 'No answer generated.');
         if (data.model) {
           setModelName(data.model.replace(/^models\//, '').replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()));
@@ -28,14 +25,13 @@ export default function SynthesisPanel({ query, results }) {
         setLoading(false);
       })
       .catch((err) => {
-        if (!isMounted) return;
         setError(err.message || 'Failed to generate answer.');
         setLoading(false);
       });
+  };
 
-    return () => {
-      isMounted = false;
-    };
+  useEffect(() => {
+    loadSynthesis();
   }, [query, results]);
 
   const handleCopy = () => {
@@ -103,8 +99,19 @@ export default function SynthesisPanel({ query, results }) {
           </div>
         ) : error ? (
           <div className="synthesis-error">
-            <AlertCircle size={16} />
-            <span>{error}</span>
+            <div className="synthesis-error-msg">
+              <AlertCircle size={16} />
+              <span>{error}</span>
+            </div>
+            <button
+              type="button"
+              className="synthesis-retry-btn"
+              onClick={loadSynthesis}
+              title="Retry synthesis"
+            >
+              <RefreshCw size={12} />
+              <span>Retry</span>
+            </button>
           </div>
         ) : (
           <div className="synthesis-text">
