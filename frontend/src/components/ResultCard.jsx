@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { FileText, Copy, Check, ChevronDown, ChevronUp } from 'lucide-react';
+import { FileText, Copy, Check, ChevronDown, ChevronUp, Clock, Touchpad, Calendar, Eye } from 'lucide-react';
 
 export default function ResultCard({ result, rank, searchQuery }) {
   const [copied, setCopied] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
+  const [showRawRow, setShowRawRow] = useState(false);
 
   // Format locator nicely: "row:9558|char:0" -> "Row 9558"
   const formatLocator = (locator) => {
@@ -17,10 +18,10 @@ export default function ResultCard({ result, rank, searchQuery }) {
       .trim();
   };
 
-  // Strip redundant "Source: filename; row:..." prefix from the text body if present
+  // Strip only the leading "Source: filename; row:..." prefix line
   const cleanSnippetText = (text) => {
     if (!text) return '';
-    return text.replace(/^Source:\s*[^;]+;\s*(?:row|sheet):[^.]+\.\s*/i, '').trim();
+    return text.replace(/^Source:\s*[^;]+;\s*(?:row|sheet):[^\n\r]+(?:\r?\n)?/i, '').trim();
   };
 
   const bodyText = cleanSnippetText(result.text);
@@ -29,6 +30,19 @@ export default function ResultCard({ result, rank, searchQuery }) {
     navigator.clipboard.writeText(result.text || '');
     setCopied(true);
     setTimeout(() => setCopied(false), 1800);
+  };
+
+  // Check if this is a structured telemetry log
+  const attrs = result.attributes || {};
+  const hasTelemetry = attrs.exhibit_id || attrs.duration_s || attrs.presses;
+
+  // Format duration nicely
+  const formatDuration = (secStr) => {
+    const sec = parseFloat(secStr);
+    if (isNaN(sec)) return secStr;
+    if (sec < 60) return `${sec.toFixed(1)} seconds`;
+    const mins = (sec / 60).toFixed(1);
+    return `${sec.toFixed(1)}s (~${mins} mins)`;
   };
 
   // Highlight matching query terms
@@ -62,7 +76,7 @@ export default function ResultCard({ result, rank, searchQuery }) {
         <div className="card-source-info">
           <span className="rank-tag">#{rank}</span>
           <FileText size={15} className="text-secondary" />
-          <span className="source-name">{result.source || 'Document Source'}</span>
+          <span className="source-name">{result.source || 'Dataset Source'}</span>
           {result.locator && (
             <span className="source-locator">{formatLocator(result.locator)}</span>
           )}
@@ -72,41 +86,95 @@ export default function ResultCard({ result, rank, searchQuery }) {
           type="button"
           className="copy-btn"
           onClick={handleCopy}
-          title="Copy text snippet"
+          title="Copy raw record"
         >
           {copied ? <Check size={14} className="text-emerald" /> : <Copy size={14} />}
           <span>{copied ? 'Copied' : 'Copy'}</span>
         </button>
       </div>
 
-      <div className="card-body">
-        <p className="card-snippet">
-          {renderHighlighted(displayText, searchQuery)}
-        </p>
+      {/* Structured Telemetry Card View */}
+      {hasTelemetry ? (
+        <div className="telemetry-card">
+          <div className="telemetry-grid">
+            {attrs.exhibit_id && (
+              <div className="telemetry-item">
+                <span className="telemetry-label">Exhibit / Station</span>
+                <span className="telemetry-value highlight-text">
+                  {attrs.display_name || attrs.exhibit_id}
+                </span>
+              </div>
+            )}
 
-        {isLong && (
+            {attrs.duration_s && (
+              <div className="telemetry-item">
+                <span className="telemetry-label">
+                  <Clock size={12} className="inline-icon" /> Visitor Dwell Time
+                </span>
+                <span className="telemetry-value">
+                  {formatDuration(attrs.duration_s)}
+                </span>
+              </div>
+            )}
+
+            {attrs.presses !== undefined && (
+              <div className="telemetry-item">
+                <span className="telemetry-label">
+                  <Touchpad size={12} className="inline-icon" /> Button / Touch Presses
+                </span>
+                <span className="telemetry-value">
+                  {attrs.presses} interactions
+                </span>
+              </div>
+            )}
+
+            {attrs.started_at && (
+              <div className="telemetry-item">
+                <span className="telemetry-label">
+                  <Calendar size={12} className="inline-icon" /> Session Timestamp
+                </span>
+                <span className="telemetry-value font-mono">
+                  {attrs.started_at.replace('T', ' ').slice(0, 19)} UTC
+                </span>
+              </div>
+            )}
+          </div>
+
           <button
             type="button"
-            className="expand-btn"
-            onClick={() => setExpanded(!expanded)}
+            className="view-raw-btn"
+            onClick={() => setShowRawRow(!showRawRow)}
           >
-            {expanded ? (
-              <><span>Show less</span><ChevronUp size={13} /></>
-            ) : (
-              <><span>Show more</span><ChevronDown size={13} /></>
-            )}
+            <Eye size={12} />
+            <span>{showRawRow ? 'Hide raw row' : 'View raw CSV row text'}</span>
           </button>
-        )}
-      </div>
 
-      {/* Relevant metadata tags */}
-      {result.attributes && Object.keys(result.attributes).length > 0 && (
-        <div className="card-tags">
-          {Object.entries(result.attributes).slice(0, 4).map(([key, value]) => (
-            <span key={key} className="meta-tag">
-              <span className="meta-key">{key}:</span> {String(value)}
-            </span>
-          ))}
+          {showRawRow && (
+            <div className="raw-row-box">
+              <code>{renderHighlighted(bodyText, searchQuery)}</code>
+            </div>
+          )}
+        </div>
+      ) : (
+        /* Standard Clean Text View */
+        <div className="card-body">
+          <p className="card-snippet">
+            {renderHighlighted(displayText, searchQuery)}
+          </p>
+
+          {isLong && (
+            <button
+              type="button"
+              className="expand-btn"
+              onClick={() => setExpanded(!expanded)}
+            >
+              {expanded ? (
+                <><span>Show less</span><ChevronUp size={13} /></>
+              ) : (
+                <><span>Show more</span><ChevronDown size={13} /></>
+              )}
+            </button>
+          )}
         </div>
       )}
 
@@ -117,7 +185,7 @@ export default function ResultCard({ result, rank, searchQuery }) {
           className="details-toggle"
           onClick={() => setShowDetails(!showDetails)}
         >
-          <span>Score & retrieval details</span>
+          <span>Retrieval Score & Ranks</span>
           {showDetails ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
         </button>
 
