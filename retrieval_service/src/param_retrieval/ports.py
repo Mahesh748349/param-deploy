@@ -1,0 +1,34 @@
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Protocol, Callable
+
+
+@dataclass
+class Chunk:
+    locator: str
+    text: str = ""
+    attributes: dict = field(default_factory=dict)
+    image: Path | None = None
+
+
+class VectorStore(Protocol):
+    """Implement this contract to replace the vector DB. Domain code stays unchanged."""
+    def ensure(self) -> None: ...
+    def upsert(self, kind: str, points: list[dict]) -> None: ...
+    def activate(self, kind: str, revision: str) -> None: ...
+    def delete(self, kind: str, revision: str) -> None: ...
+    def search(self, kind: str, vector: list[float], dataset: str,
+               index_id: str, limit: int, filters: dict | None = None) -> list[dict]: ...
+    def lexical_search(self, query: str, dataset: str, index_id: str,
+                       limit: int, filters: dict | None = None) -> list[dict]: ...
+    def backfill_filters(self) -> int: ...
+    def close(self) -> None: ...
+
+
+class Embedder(Protocol):
+    def documents(self, kind: str, chunks: list[Chunk]) -> list[list[float]]: ...
+    def query(self, kind: str, query: str) -> list[float]: ...
+
+
+# Future LLM/reranker integration receives the same retrieval response.
+Postprocessor = Callable[[str, dict], dict]

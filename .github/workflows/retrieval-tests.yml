@@ -1,0 +1,30 @@
+name: Retrieval tests
+
+on:
+  push:
+    branches:
+      - retrieval-deployment
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: retrieval_service
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: retrieval_service/pyproject.toml
+
+      - name: Install dependencies
+        run: python -m pip install ".[production,test]"
+
+      - name: Run tests
+        run: python -m pytest -q
