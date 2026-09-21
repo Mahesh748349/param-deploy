@@ -152,42 +152,49 @@ app.post('/api/retrieve', async (req, res) => {
   let upstreamData = null;
   let upstreamSuccess = false;
 
-  // Try upstream retrieval service with a bounded 6-second timeout
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 6000);
-
-    const upstreamResponse = await fetch(`${PARAM_SERVICE_URL}/v1/retrieve`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${PARAM_READ_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        query: cleanQuery,
-        top_k: validatedTopK,
-        scope: validatedScope
-      }),
-      signal: controller.signal
-    });
-
-    clearTimeout(timeout);
-
-    const rawText = await upstreamResponse.text();
+  // Try upstream retrieval service with retries
+  const MAX_RETRIES = 3;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      upstreamData = JSON.parse(rawText);
-    } catch {
-      upstreamData = { raw: rawText };
-    }
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 120000);
 
-    if (upstreamResponse.ok && (Array.isArray(upstreamData.text_results) || Array.isArray(upstreamData.results))) {
-      upstreamSuccess = true;
-    } else {
-      console.warn(`[Retrieve] Upstream HTTP ${upstreamResponse.status}. Activating resilient fallback.`);
+      const upstreamResponse = await fetch(`${PARAM_SERVICE_URL}/v1/retrieve`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${PARAM_READ_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          query: cleanQuery,
+          top_k: validatedTopK,
+          scope: validatedScope
+        }),
+        signal: controller.signal
+      });
+
+      clearTimeout(timeout);
+
+      const rawText = await upstreamResponse.text();
+      try {
+        upstreamData = JSON.parse(rawText);
+      } catch {
+        upstreamData = { raw: rawText };
+      }
+
+      if (upstreamResponse.ok && (Array.isArray(upstreamData.text_results) || Array.isArray(upstreamData.results))) {
+        upstreamSuccess = true;
+        break;
+      } else {
+        console.warn(`[Retrieve] Attempt ${attempt}/${MAX_RETRIES} - Upstream HTTP ${upstreamResponse.status}.`);
+        if (attempt < MAX_RETRIES) await new Promise(r => setTimeout(r, 2000 * attempt));
+      }
+    } catch (err) {
+      console.warn(`[Retrieve] Attempt ${attempt}/${MAX_RETRIES} - Connection issue (${err.message}).`);
+      if (attempt < MAX_RETRIES) await new Promise(r => setTimeout(r, 2000 * attempt));
     }
-  } catch (err) {
-    console.warn(`[Retrieve] Upstream connection issue (${err.message}). Activating resilient fallback.`);
   }
+  if (!upstreamSuccess) console.warn('[Retrieve] All retries failed. Activating resilient fallback.');
 
   // If upstream responded successfully, return live results
   if (upstreamSuccess && upstreamData) {

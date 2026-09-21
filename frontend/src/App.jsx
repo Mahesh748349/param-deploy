@@ -17,6 +17,12 @@ export default function App() {
   const [scope, setScope] = useState('text');
   const [results, setResults] = useState([]);
   const [meta, setMeta] = useState(null);
+
+  // Clear stale results on mount
+  useEffect(() => {
+    setResults([]);
+    setMeta(null);
+  }, []);
   const [loading, setLoading] = useState(false);
   const [isSpinningUp, setIsSpinningUp] = useState(false);
   const [error, setError] = useState(null);
