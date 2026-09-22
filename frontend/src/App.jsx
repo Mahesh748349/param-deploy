@@ -93,7 +93,7 @@ export default function App() {
     // Warm-up timeout indicator for Render
     const spinTimer = setTimeout(() => {
       setIsSpinningUp(true);
-    }, 4500);
+    }, 3000);
 
     try {
       const data = await retrieveQuery({

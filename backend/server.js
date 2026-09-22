@@ -2,7 +2,6 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import rateLimit from 'express-rate-limit';
-import { searchFallbackTelemetry } from './telemetryFallback.js';
 
 dotenv.config();
 
@@ -152,10 +151,12 @@ app.post('/api/retrieve', async (req, res) => {
   let upstreamData = null;
   let upstreamSuccess = false;
 
-  // Try upstream retrieval service with a bounded 6-second timeout
+  // Forward to upstream retrieval service.
+  // 55s timeout covers Render free-tier cold-start (can take up to ~50s after inactivity).
+  // We never serve fake/fallback data — if upstream is unreachable, we return a real error.
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 6000);
+    const timeout = setTimeout(() => controller.abort(), 55000);
 
     const upstreamResponse = await fetch(`${PARAM_SERVICE_URL}/v1/retrieve`, {
       method: 'POST',
@@ -183,13 +184,26 @@ app.post('/api/retrieve', async (req, res) => {
     if (upstreamResponse.ok && (Array.isArray(upstreamData.text_results) || Array.isArray(upstreamData.results))) {
       upstreamSuccess = true;
     } else {
-      console.warn(`[Retrieve] Upstream HTTP ${upstreamResponse.status}. Activating resilient fallback.`);
+      const upstreamErr = upstreamData?.error || upstreamData?.detail || `Upstream HTTP ${upstreamResponse.status}`;
+      console.warn(`[Retrieve] Upstream error: ${upstreamErr}`);
+      return res.status(upstreamResponse.status || 502).json({
+        error: 'Upstream retrieval failed',
+        message: upstreamErr
+      });
     }
   } catch (err) {
-    console.warn(`[Retrieve] Upstream connection issue (${err.message}). Activating resilient fallback.`);
+    const isTimeout = err.name === 'AbortError';
+    const message = isTimeout
+      ? 'The retrieval service took too long to respond. It may be cold-starting on Render — please try again in a moment.'
+      : `Could not reach retrieval service: ${err.message}`;
+    console.warn(`[Retrieve] ${message}`);
+    return res.status(503).json({
+      error: 'Retrieval service unavailable',
+      message
+    });
   }
 
-  // If upstream responded successfully, return live results
+  // Return live results from upstream
   if (upstreamSuccess && upstreamData) {
     const latency = Date.now() - startTime;
     return res.json({
@@ -198,18 +212,6 @@ app.post('/api/retrieve', async (req, res) => {
       _is_live: true
     });
   }
-
-  // Resilient Fallback: Upstream service is sleeping, crashed (502/OOM), or timed out.
-  // Serve authentic, indexed telemetry rows from engagement-sessions-2026-09-15.csv!
-  const fallback = searchFallbackTelemetry(cleanQuery, validatedTopK);
-  const latency = Date.now() - startTime;
-
-  return res.json({
-    ...fallback,
-    _latency_ms: latency,
-    _is_live: false,
-    _notice: "Upstream Python retrieval service is currently cold-starting on Render. Serving indexed telemetry dataset."
-  });
 });
 
 /**
