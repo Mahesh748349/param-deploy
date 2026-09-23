@@ -152,6 +152,13 @@ app.post('/api/retrieve', async (req, res) => {
   let upstreamData = null;
   let upstreamSuccess = false;
 
+  // Wake up Render first if needed
+  try {
+    const wakeRes = await fetch(`${PARAM_SERVICE_URL}/health`, { method: 'GET' });
+    if (!wakeRes.ok) await new Promise(r => setTimeout(r, 15000));
+    else await new Promise(r => setTimeout(r, 3000));
+  } catch { await new Promise(r => setTimeout(r, 15000)); }
+
   // Try upstream retrieval service with retries
   const MAX_RETRIES = 3;
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
@@ -187,11 +194,11 @@ app.post('/api/retrieve', async (req, res) => {
         break;
       } else {
         console.warn(`[Retrieve] Attempt ${attempt}/${MAX_RETRIES} - Upstream HTTP ${upstreamResponse.status}.`);
-        if (attempt < MAX_RETRIES) await new Promise(r => setTimeout(r, 2000 * attempt));
+        if (attempt < MAX_RETRIES) await new Promise(r => setTimeout(r, 10000 * attempt));
       }
     } catch (err) {
       console.warn(`[Retrieve] Attempt ${attempt}/${MAX_RETRIES} - Connection issue (${err.message}).`);
-      if (attempt < MAX_RETRIES) await new Promise(r => setTimeout(r, 2000 * attempt));
+      if (attempt < MAX_RETRIES) await new Promise(r => setTimeout(r, 10000 * attempt));
     }
   }
   if (!upstreamSuccess) console.warn('[Retrieve] All retries failed. Activating resilient fallback.');
