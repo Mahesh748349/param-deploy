@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Mail, Lock, Eye, EyeOff, CheckCircle2, AlertCircle, Loader2, Send, ArrowLeft, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { isEmailAllowed } from '../config/allowedUsers';
 
 export default function AuthModal({ isOpen, onClose, initialMode = 'signin' }) {
   const { signIn, signUp, resendConfirmation, resetPassword } = useAuth();
@@ -45,6 +46,15 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'signin' }) {
     const cleanEmail = email.trim();
     if (!cleanEmail) {
       setError('Please enter your email address.');
+      return;
+    }
+
+    if (!isEmailAllowed(cleanEmail)) {
+      if (mode === 'signup') {
+        setError('Access restricted. Registration is limited to authorized team members only.');
+      } else {
+        setError('Access restricted. This email is not authorized for Param Retrieval Studio.');
+      }
       return;
     }
 
@@ -211,7 +221,7 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'signin' }) {
               </h3>
               <p className="auth-subtitle">
                 {mode === 'signin' && 'Sign in to access real-time telemetry search & Gemini synthesis.'}
-                {mode === 'signup' && 'Sign up with real email verification to start querying.'}
+                {mode === 'signup' && 'Authorized team registration. Verification link will be sent to your inbox.'}
                 {mode === 'forgot' && 'Enter your email to receive a secure password reset link.'}
               </p>
             </div>

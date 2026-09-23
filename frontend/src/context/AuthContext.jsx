@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase, isSupabaseConfigured } from '../supabaseClient';
+import { isEmailAllowed } from '../config/allowedUsers';
 
 const AuthContext = createContext(null);
 
@@ -14,10 +15,23 @@ export function AuthProvider({ children }) {
       return;
     }
 
+    // Helper to validate and clean up unauthorized sessions
+    const handleSession = (currentSession) => {
+      const email = currentSession?.user?.email;
+      if (email && !isEmailAllowed(email)) {
+        console.warn('[Auth] Unauthorized email detected, logging out:', email);
+        supabase.auth.signOut();
+        setSession(null);
+        setUser(null);
+        return;
+      }
+      setSession(currentSession);
+      setUser(currentSession?.user ?? null);
+    };
+
     // 1. Check existing session on mount
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
+      handleSession(session);
       setLoading(false);
     }).catch((err) => {
       console.warn('[Auth] Error getting session:', err);
@@ -26,8 +40,7 @@ export function AuthProvider({ children }) {
 
     // 2. Subscribe to auth state changes (login, logout, token refresh, email confirm link click)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      setUser(session?.user ?? null);
+      handleSession(session);
       setLoading(false);
     });
 
@@ -36,9 +49,12 @@ export function AuthProvider({ children }) {
     };
   }, []);
 
-  // Sign up with real email confirmation
+  // Sign up with real email confirmation and whitelist guard
   const signUp = async (email, password) => {
     if (!supabase) throw new Error('Supabase client is not configured.');
+    if (!isEmailAllowed(email)) {
+      throw new Error('Access restricted. Registration is limited to authorized team members only.');
+    }
     const redirectTo = typeof window !== 'undefined' ? window.location.origin : undefined;
     return await supabase.auth.signUp({
       email,
@@ -49,9 +65,12 @@ export function AuthProvider({ children }) {
     });
   };
 
-  // Sign in with email and password
+  // Sign in with email, password, and whitelist guard
   const signIn = async (email, password) => {
     if (!supabase) throw new Error('Supabase client is not configured.');
+    if (!isEmailAllowed(email)) {
+      throw new Error('Access restricted. This email is not authorized for Param Retrieval Studio.');
+    }
     return await supabase.auth.signInWithPassword({
       email,
       password
