@@ -11,6 +11,9 @@ async function getAuthHeaders() {
       if (session?.access_token) {
         headers['Authorization'] = `Bearer ${session.access_token}`;
       }
+      if (session?.user?.email) {
+        headers['X-User-Email'] = session.user.email.toLowerCase().trim();
+      }
     }
   } catch (err) {
     console.warn('[API] Auth header resolution warning:', err);

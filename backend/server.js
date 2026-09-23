@@ -58,8 +58,26 @@ app.use((req, res, next) => {
     const duration = Date.now() - start;
     console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl} -> ${res.statusCode} (${duration}ms)`);
   });
+// Allowed team emails whitelist
+const ALLOWED_EMAILS = [
+  'mantriramitha.cs24@bmsce.ac.in',
+  'mantriramitha17@gmail.com',
+  'maheshx43a@gmail.com',
+  'amitraksharmukherjee@gmail.com',
+  'ml9079725@gmail.com'
+].map(e => e.toLowerCase());
+
+// Middleware to enforce authorized team email on API endpoints
+function requireAuthorizedTeamEmail(req, res, next) {
+  const userEmail = (req.headers['x-user-email'] || '').toLowerCase().trim();
+  if (!userEmail || !ALLOWED_EMAILS.includes(userEmail)) {
+    return res.status(403).json({
+      error: 'Forbidden',
+      message: '⛔ Unauthorized: Access is strictly restricted to designated team members only.'
+    });
+  }
   next();
-});
+}
 
 
 
@@ -117,7 +135,7 @@ app.get('/api/health', handleHealth);
  * POST /api/retrieve
  * Body: { query: string, top_k?: number, scope?: "text" | "image" | "all" }
  */
-app.post('/api/retrieve', async (req, res) => {
+app.post('/api/retrieve', requireAuthorizedTeamEmail, async (req, res) => {
   const { query, top_k = 5, scope = 'text' } = req.body || {};
 
   if (!query || typeof query !== 'string' || query.trim().length === 0) {
@@ -224,7 +242,7 @@ app.post('/api/retrieve', async (req, res) => {
  * POST /api/synthesize
  * Body: { query: string, text_results: Array }
  */
-app.post('/api/synthesize', async (req, res) => {
+app.post('/api/synthesize', requireAuthorizedTeamEmail, async (req, res) => {
   const { query, text_results } = req.body || {};
   if (!query || !Array.isArray(text_results) || text_results.length === 0) {
     return res.status(400).json({ error: 'Query and text_results are required.' });
