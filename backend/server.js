@@ -2,7 +2,6 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import rateLimit from 'express-rate-limit';
-import { searchFallbackTelemetry } from './telemetryFallback.js';
 
 dotenv.config();
 
@@ -155,16 +154,17 @@ app.post('/api/retrieve', async (req, res) => {
   // Wake up Render first if needed
   try {
     const wakeRes = await fetch(`${PARAM_SERVICE_URL}/health`, { method: 'GET' });
-    if (!wakeRes.ok) await new Promise(r => setTimeout(r, 15000));
-    else await new Promise(r => setTimeout(r, 3000));
-  } catch { await new Promise(r => setTimeout(r, 15000)); }
+    if (!wakeRes.ok) await new Promise(r => setTimeout(r, 8000));
+  } catch {
+    await new Promise(r => setTimeout(r, 8000));
+  }
 
   // Try upstream retrieval service with retries
   const MAX_RETRIES = 3;
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 120000);
+      const timeout = setTimeout(() => controller.abort(), 60000);
 
       const upstreamResponse = await fetch(`${PARAM_SERVICE_URL}/v1/retrieve`, {
         method: 'POST',
@@ -194,16 +194,15 @@ app.post('/api/retrieve', async (req, res) => {
         break;
       } else {
         console.warn(`[Retrieve] Attempt ${attempt}/${MAX_RETRIES} - Upstream HTTP ${upstreamResponse.status}.`);
-        if (attempt < MAX_RETRIES) await new Promise(r => setTimeout(r, 10000 * attempt));
+        if (attempt < MAX_RETRIES) await new Promise(r => setTimeout(r, 4000 * attempt));
       }
     } catch (err) {
       console.warn(`[Retrieve] Attempt ${attempt}/${MAX_RETRIES} - Connection issue (${err.message}).`);
-      if (attempt < MAX_RETRIES) await new Promise(r => setTimeout(r, 10000 * attempt));
+      if (attempt < MAX_RETRIES) await new Promise(r => setTimeout(r, 4000 * attempt));
     }
   }
-  if (!upstreamSuccess) console.warn('[Retrieve] All retries failed. Activating resilient fallback.');
 
-  // If upstream responded successfully, return live results
+  // Return live results from upstream
   if (upstreamSuccess && upstreamData) {
     const latency = Date.now() - startTime;
     return res.json({
@@ -213,16 +212,10 @@ app.post('/api/retrieve', async (req, res) => {
     });
   }
 
-  // Resilient Fallback: Upstream service is sleeping, crashed (502/OOM), or timed out.
-  // Serve authentic, indexed telemetry rows from engagement-sessions-2026-09-15.csv!
-  const fallback = searchFallbackTelemetry(cleanQuery, validatedTopK);
-  const latency = Date.now() - startTime;
-
-  return res.json({
-    ...fallback,
-    _latency_ms: latency,
-    _is_live: false,
-    _notice: "Upstream Python retrieval service is currently cold-starting on Render. Serving indexed telemetry dataset."
+  const upstreamErr = upstreamData?.error || upstreamData?.detail || 'Upstream retrieval failed after retries. The service may be cold-starting on Render — please try again in a moment.';
+  return res.status(503).json({
+    error: 'Retrieval service unavailable',
+    message: upstreamErr
   });
 });
 

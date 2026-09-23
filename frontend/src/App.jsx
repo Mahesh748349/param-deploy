@@ -6,11 +6,14 @@ import ResultCard from './components/ResultCard';
 import SynthesisPanel from './components/SynthesisPanel';
 import RawJsonModal from './components/RawJsonModal';
 import StatusBanner from './components/StatusBanner';
+import AuthModal from './components/AuthModal';
+import { useAuth } from './context/AuthContext';
 import { checkHealth, retrieveQuery } from './api';
-import { Search } from 'lucide-react';
+import { Search, Shield, Lock, Sparkles, CheckCircle2 } from 'lucide-react';
 import './App.css';
 
 export default function App() {
+  const { user } = useAuth();
   const [theme, setTheme] = useState(() => localStorage.getItem('param_theme') || 'dark');
   const [query, setQuery] = useState('visitor interactions involving color perception');
   const [topK, setTopK] = useState(5);
@@ -31,6 +34,11 @@ export default function App() {
   const [selectedSource, setSelectedSource] = useState('');
   const [showSynthesis, setShowSynthesis] = useState(false);
   const [showRawJson, setShowRawJson] = useState(false);
+  
+  // Auth Modal state
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authModalMode, setAuthModalMode] = useState('signin');
+
   const [history, setHistory] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem('param_history') || '[]');
@@ -65,10 +73,23 @@ export default function App() {
     return () => clearInterval(interval);
   }, [refreshHealth]);
 
+  // Open Auth helper
+  const handleOpenAuth = (mode = 'signin') => {
+    setAuthModalMode(mode);
+    setAuthModalOpen(true);
+  };
+
   // Search Handler
   const handleSearch = async (searchQuery = query) => {
     const trimmed = searchQuery.trim();
     if (!trimmed) return;
+
+    // Check if user is authenticated with Supabase
+    if (!user) {
+      setAuthModalMode('signin');
+      setAuthModalOpen(true);
+      return;
+    }
 
     setLoading(true);
     setError(null);
@@ -78,7 +99,7 @@ export default function App() {
     // Warm-up timeout indicator for Render
     const spinTimer = setTimeout(() => {
       setIsSpinningUp(true);
-    }, 4500);
+    }, 3000);
 
     try {
       const data = await retrieveQuery({
@@ -120,7 +141,12 @@ export default function App() {
 
   return (
     <div className="app-container">
-      <Header health={health} theme={theme} toggleTheme={toggleTheme} />
+      <Header
+        health={health}
+        theme={theme}
+        toggleTheme={toggleTheme}
+        onOpenAuth={handleOpenAuth}
+      />
 
       <main className="main-content">
         <StatusBanner
@@ -132,6 +158,50 @@ export default function App() {
             setNotice(null);
           }}
         />
+
+        {/* Authentication Callout Banner when not signed in */}
+        {!user && (
+          <div className="auth-lock-card">
+            <div className="auth-lock-content">
+              <div className="auth-lock-icon">
+                <Shield size={24} className="text-indigo" />
+              </div>
+              <div className="auth-lock-text">
+                <h3 className="auth-lock-title">Email-Verified Authentication Active</h3>
+                <p className="auth-lock-subtitle">
+                  To protect retrieval compute and synthesize telemetry insights with Gemini, please sign in or create an account with a real verified email.
+                </p>
+              </div>
+            </div>
+            <div className="auth-lock-actions">
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => handleOpenAuth('signup')}
+              >
+                Create Account (Free)
+              </button>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => handleOpenAuth('signin')}
+              >
+                Sign In
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Verified User Greeting */}
+        {user && (
+          <div className="verified-user-banner">
+            <div className="verified-user-info">
+              <CheckCircle2 size={16} className="text-emerald" />
+              <span>Verified Session Active: <strong>{user.email}</strong></span>
+            </div>
+            <span className="verified-badge">Authenticated</span>
+          </div>
+        )}
 
         <SearchBar
           query={query}
@@ -197,9 +267,16 @@ export default function App() {
         <RawJsonModal data={meta} onClose={() => setShowRawJson(false)} />
       )}
 
+      {/* Supabase Authentication Modal */}
+      <AuthModal
+        isOpen={authModalOpen}
+        onClose={() => setAuthModalOpen(false)}
+        initialMode={authModalMode}
+      />
+
       <footer className="footer-container">
         <div className="footer-content">
-          <span>Param Retrieval System &bull; Live Qdrant &amp; BM25 Vector Index</span>
+          <span>Param Retrieval System &bull; Supabase Auth &bull; Qdrant &amp; BM25 Vector Index</span>
         </div>
       </footer>
     </div>
