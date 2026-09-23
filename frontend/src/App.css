@@ -1440,3 +1440,568 @@
   padding: 0.65rem;
   font-size: 0.82rem;
 }
+
+/* ==========================================================================
+   RESPONSIVE — Tablet (≤768px)
+   ========================================================================== */
+@media (max-width: 768px) {
+  /* Header: stack logo + actions vertically */
+  .header-content {
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    padding: 0.75rem 1rem;
+  }
+
+  .logo-title {
+    font-size: 1.05rem;
+  }
+
+  .logo-subtitle {
+    font-size: 0.7rem;
+  }
+
+  .header-actions {
+    gap: 0.5rem;
+  }
+
+  /* Hide latency number on smaller screens */
+  .status-latency {
+    display: none;
+  }
+
+  /* Truncate email more aggressively */
+  .user-email-text {
+    max-width: 100px;
+  }
+
+  /* Main content: reduce padding */
+  .main-content {
+    padding: 1.5rem 1rem 3rem 1rem;
+    gap: 1.25rem;
+  }
+
+  /* Search bar: reduce internal padding */
+  .search-bar-wrapper {
+    padding: 0.4rem 0.4rem 0.4rem 0.85rem;
+  }
+
+  .search-input {
+    font-size: 0.95rem;
+  }
+
+  /* Hide keyboard shortcut on touch devices */
+  .search-shortcut {
+    display: none;
+  }
+
+  .search-submit-btn {
+    padding: 0.55rem 1rem;
+    font-size: 0.85rem;
+  }
+
+  /* Options row: wrap */
+  .search-options-row {
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  /* Auth lock banner: stack vertically */
+  .auth-lock-card {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 1rem;
+  }
+
+  .auth-lock-content {
+    min-width: unset;
+  }
+
+  .auth-lock-actions {
+    justify-content: stretch;
+  }
+
+  .auth-lock-actions button {
+    flex: 1;
+  }
+
+  /* Result cards */
+  .result-card {
+    padding: 0.95rem 1rem;
+  }
+
+  .card-top {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  /* Results header bar: stack on tablet */
+  .results-header-bar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.6rem;
+  }
+
+  .results-actions-right {
+    flex-wrap: wrap;
+    width: 100%;
+  }
+
+  /* Telemetry grid: 2 columns */
+  .telemetry-grid {
+    grid-template-columns: repeat(2, 1fr);
+    padding: 0.75rem 0.85rem;
+  }
+
+  /* Synthesis panel */
+  .synthesis-card {
+    padding: 1rem 1.1rem;
+  }
+
+  /* Modal: wider on tablet */
+  .modal-backdrop {
+    padding: 1rem;
+  }
+
+  .modal-card {
+    max-width: 100%;
+  }
+
+  /* Auth modal */
+  .auth-modal-card {
+    width: 95%;
+    padding: 1.5rem;
+  }
+
+  /* Footer */
+  .footer-container {
+    padding: 0.85rem 1rem;
+    font-size: 0.7rem;
+  }
+
+  /* Details drawer: wrap items */
+  .details-drawer {
+    gap: 0.75rem;
+  }
+}
+
+/* ==========================================================================
+   RESPONSIVE — Phone (≤480px)
+   ========================================================================== */
+@media (max-width: 480px) {
+  /* Header: fully stacked */
+  .header-content {
+    padding: 0.65rem 0.75rem;
+    gap: 0.5rem;
+  }
+
+  .logo-group {
+    gap: 0.5rem;
+  }
+
+  .logo-icon-box {
+    width: 30px;
+    height: 30px;
+  }
+
+  .logo-title {
+    font-size: 0.95rem;
+  }
+
+  /* Hide the "Supabase Auth" badge on phone */
+  .auth-status-badge {
+    display: none;
+  }
+
+  .logo-subtitle {
+    display: none;
+  }
+
+  .header-actions {
+    gap: 0.4rem;
+  }
+
+  /* Hide email in header on phone — only show avatar */
+  .user-email-text {
+    display: none;
+  }
+
+  .user-avatar-badge {
+    padding: 0.25rem;
+  }
+
+  .status-pill {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.68rem;
+  }
+
+  .status-label {
+    display: none;
+  }
+
+  .icon-btn {
+    width: 30px;
+    height: 30px;
+  }
+
+  /* Main content */
+  .main-content {
+    padding: 1rem 0.75rem 2.5rem 0.75rem;
+    gap: 1rem;
+  }
+
+  /* Search */
+  .search-bar-wrapper {
+    padding: 0.35rem 0.35rem 0.35rem 0.65rem;
+    border-radius: var(--radius-md);
+  }
+
+  .search-icon {
+    margin-right: 0.45rem;
+  }
+
+  .search-input {
+    font-size: 0.88rem;
+  }
+
+  .search-submit-btn {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.8rem;
+    border-radius: var(--radius-sm);
+  }
+
+  /* On phone, show only the arrow icon, hide "Search" text */
+  .search-submit-btn span {
+    display: none;
+  }
+
+  .search-options-row {
+    gap: 0.6rem;
+  }
+
+  .option-item {
+    font-size: 0.75rem;
+  }
+
+  .option-select {
+    font-size: 0.74rem;
+  }
+
+  /* Suggestions: scroll horizontally */
+  .suggestions-container {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 0.25rem;
+    scrollbar-width: none;
+  }
+
+  .suggestions-container::-webkit-scrollbar {
+    display: none;
+  }
+
+  .suggestions-list {
+    flex-wrap: nowrap;
+  }
+
+  .suggestion-chip {
+    white-space: nowrap;
+    flex-shrink: 0;
+    font-size: 0.7rem;
+    padding: 0.2rem 0.55rem;
+  }
+
+  /* History: also horizontal scroll */
+  .history-container {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .history-container::-webkit-scrollbar {
+    display: none;
+  }
+
+  .history-list {
+    flex-wrap: nowrap;
+  }
+
+  .history-chip {
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  /* Auth lock banner */
+  .auth-lock-card {
+    padding: 0.85rem;
+    gap: 0.75rem;
+  }
+
+  .auth-lock-content {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.6rem;
+  }
+
+  .auth-lock-icon {
+    width: 36px;
+    height: 36px;
+  }
+
+  .auth-lock-title {
+    font-size: 0.88rem;
+  }
+
+  .auth-lock-subtitle {
+    font-size: 0.78rem;
+  }
+
+  .auth-lock-actions {
+    width: 100%;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .auth-lock-actions button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* Verified user banner */
+  .verified-user-banner {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.4rem;
+    padding: 0.5rem 0.85rem;
+    font-size: 0.78rem;
+  }
+
+  /* Status banner */
+  .status-banner {
+    padding: 0.6rem 0.85rem;
+    font-size: 0.8rem;
+  }
+
+  /* Results section */
+  .results-header-bar {
+    gap: 0.5rem;
+  }
+
+  .results-meta-left {
+    font-size: 0.8rem;
+    flex-wrap: wrap;
+  }
+
+  .results-actions-right {
+    gap: 0.45rem;
+  }
+
+  .action-btn {
+    font-size: 0.7rem;
+    padding: 0.25rem 0.5rem;
+  }
+
+  .filter-wrapper {
+    padding: 0.15rem 0.4rem;
+  }
+
+  .filter-select {
+    font-size: 0.7rem;
+  }
+
+  /* Result cards */
+  .result-card {
+    padding: 0.85rem 0.85rem;
+    gap: 0.6rem;
+  }
+
+  .card-source-info {
+    gap: 0.35rem;
+  }
+
+  .rank-tag {
+    font-size: 0.68rem;
+    padding: 0.1rem 0.35rem;
+  }
+
+  .source-name {
+    font-size: 0.76rem;
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .source-locator {
+    font-size: 0.7rem;
+  }
+
+  .copy-btn {
+    font-size: 0.68rem;
+    padding: 0.2rem 0.4rem;
+  }
+
+  .card-body {
+    font-size: 0.85rem;
+    line-height: 1.55;
+  }
+
+  /* Telemetry grid: single column on phone */
+  .telemetry-grid {
+    grid-template-columns: 1fr;
+    gap: 0.6rem;
+    padding: 0.65rem 0.75rem;
+  }
+
+  .telemetry-label {
+    font-size: 0.65rem;
+  }
+
+  .telemetry-value {
+    font-size: 0.85rem;
+  }
+
+  .card-tags {
+    gap: 0.25rem;
+  }
+
+  .meta-tag {
+    font-size: 0.68rem;
+    padding: 0.08rem 0.35rem;
+  }
+
+  /* Card footer details */
+  .details-drawer {
+    gap: 0.6rem;
+    padding: 0.5rem 0.65rem;
+    font-size: 0.7rem;
+  }
+
+  .details-toggle {
+    font-size: 0.68rem;
+  }
+
+  /* Synthesis card */
+  .synthesis-card {
+    padding: 0.85rem;
+  }
+
+  .synthesis-title {
+    font-size: 0.88rem;
+  }
+
+  .synthesis-body {
+    font-size: 0.84rem;
+    line-height: 1.55;
+  }
+
+  .synthesis-footer {
+    font-size: 0.68rem;
+  }
+
+  .gemini-badge {
+    font-size: 0.62rem;
+  }
+
+  /* Narrative box */
+  .narrative-box {
+    padding: 0.7rem 0.85rem;
+  }
+
+  .narrative-text {
+    font-size: 0.85rem;
+    line-height: 1.55;
+  }
+
+  /* Empty state */
+  .empty-state {
+    padding: 2.5rem 1rem;
+  }
+
+  .empty-title {
+    font-size: 1rem;
+  }
+
+  .empty-desc {
+    font-size: 0.82rem;
+  }
+
+  /* Modal — full screen on phone */
+  .modal-backdrop {
+    padding: 0;
+    align-items: flex-end;
+  }
+
+  .modal-card {
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    max-height: 90vh;
+  }
+
+  .modal-header {
+    padding: 0.75rem 1rem;
+  }
+
+  .modal-body {
+    padding: 0.75rem 1rem;
+  }
+
+  .json-code-block {
+    font-size: 0.7rem;
+    padding: 0.65rem;
+  }
+
+  /* Auth modal */
+  .auth-modal-card {
+    width: 100%;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    padding: 1.5rem 1.25rem 2rem;
+    max-height: 95vh;
+    overflow-y: auto;
+  }
+
+  .auth-title {
+    font-size: 1.05rem;
+  }
+
+  .auth-subtitle {
+    font-size: 0.78rem;
+  }
+
+  /* Footer */
+  .footer-container {
+    padding: 0.75rem;
+    font-size: 0.65rem;
+  }
+}
+
+/* ==========================================================================
+   Utility: Prevent body scroll when modal is open (add via JS if needed)
+   ========================================================================== */
+.body-no-scroll {
+  overflow: hidden;
+}
+
+/* Touch-friendly tap targets */
+@media (hover: none) and (pointer: coarse) {
+  .icon-btn {
+    width: 36px;
+    height: 36px;
+  }
+
+  .suggestion-chip,
+  .history-chip {
+    padding: 0.35rem 0.7rem;
+    font-size: 0.76rem;
+  }
+
+  .action-btn {
+    padding: 0.4rem 0.7rem;
+  }
+
+  .details-toggle {
+    padding: 0.3rem 0;
+  }
+
+  .expand-btn {
+    padding: 0.3rem 0;
+  }
+}
