@@ -3,6 +3,7 @@
  */
 export const ALLOWED_EMAILS = [
   'mantriramitha.cs24@bmsce.ac.in',
+  'mantriramitha17@gmail.com',
   'maheshx43a@gmail.com',
   'amitraksharmukherjee@gmail.com',
   'ml9079725@gmail.com'

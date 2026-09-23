@@ -8,11 +8,17 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [isRecoveryMode, setIsRecoveryMode] = useState(false);
 
   useEffect(() => {
     if (!isSupabaseConfigured || !supabase) {
       setLoading(false);
       return;
+    }
+
+    // Check if user arrived via recovery link
+    if (typeof window !== 'undefined' && window.location.hash.includes('type=recovery')) {
+      setIsRecoveryMode(true);
     }
 
     // Helper to validate and clean up unauthorized sessions
@@ -38,8 +44,11 @@ export function AuthProvider({ children }) {
       setLoading(false);
     });
 
-    // 2. Subscribe to auth state changes (login, logout, token refresh, email confirm link click)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    // 2. Subscribe to auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsRecoveryMode(true);
+      }
       handleSession(session);
       setLoading(false);
     });
@@ -53,7 +62,7 @@ export function AuthProvider({ children }) {
   const signUp = async (email, password) => {
     if (!supabase) throw new Error('Supabase client is not configured.');
     if (!isEmailAllowed(email)) {
-      throw new Error('Access restricted. Registration is limited to authorized team members only.');
+      throw new Error("⛔ Unauthorized: You do not have permission to access or create an account with this email. Only designated team members are authorized.");
     }
     const redirectTo = typeof window !== 'undefined' ? window.location.origin : undefined;
     return await supabase.auth.signUp({
@@ -69,7 +78,7 @@ export function AuthProvider({ children }) {
   const signIn = async (email, password) => {
     if (!supabase) throw new Error('Supabase client is not configured.');
     if (!isEmailAllowed(email)) {
-      throw new Error('Access restricted. This email is not authorized for Param Retrieval Studio.');
+      throw new Error("⛔ Unauthorized: This email is not authorized for Param Retrieval Studio.");
     }
     return await supabase.auth.signInWithPassword({
       email,
@@ -99,22 +108,39 @@ export function AuthProvider({ children }) {
   // Reset password email
   const resetPassword = async (email) => {
     if (!supabase) throw new Error('Supabase client is not configured.');
+    if (!isEmailAllowed(email)) {
+      throw new Error("⛔ Unauthorized: This email is not recognized as an authorized team member.");
+    }
     const redirectTo = typeof window !== 'undefined' ? window.location.origin : undefined;
     return await supabase.auth.resetPasswordForEmail(email, {
       redirectTo
     });
   };
 
+  // Update password (used after clicking password reset recovery link)
+  const updatePassword = async (newPassword) => {
+    if (!supabase) throw new Error('Supabase client is not configured.');
+    const { data, error } = await supabase.auth.updateUser({
+      password: newPassword
+    });
+    if (error) throw error;
+    setIsRecoveryMode(false);
+    return data;
+  };
+
   const value = {
     user,
     session,
     loading,
+    isRecoveryMode,
+    setIsRecoveryMode,
     isConfigured: isSupabaseConfigured,
     signUp,
     signIn,
     signOut,
     resendConfirmation,
-    resetPassword
+    resetPassword,
+    updatePassword
   };
 
   return (

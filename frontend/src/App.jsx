@@ -13,7 +13,7 @@ import { Search, Shield, Lock, Sparkles, CheckCircle2 } from 'lucide-react';
 import './App.css';
 
 export default function App() {
-  const { user } = useAuth();
+  const { user, isRecoveryMode } = useAuth();
   const [theme, setTheme] = useState(() => localStorage.getItem('param_theme') || 'dark');
   const [query, setQuery] = useState('visitor interactions involving color perception');
   const [topK, setTopK] = useState(5);
@@ -38,6 +38,14 @@ export default function App() {
   // Auth Modal state
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState('signin');
+
+  // Automatically trigger reset password modal when user arrives via recovery link
+  useEffect(() => {
+    if (isRecoveryMode) {
+      setAuthModalMode('reset-password');
+      setAuthModalOpen(true);
+    }
+  }, [isRecoveryMode]);
 
   const [history, setHistory] = useState(() => {
     try {
