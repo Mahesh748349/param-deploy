@@ -20,11 +20,12 @@ export default function ResultCard({ result, rank, searchQuery }) {
   const attrs = result.attributes || {};
   const hasStructuredTelemetry = Boolean(attrs.exhibit_id || attrs.duration_s || attrs.presses);
 
-  // Format locator: "row:9558|char:0" -> "Row 9558"
+  // Format locator: "row:9558|char:0" -> "Row 9558", "page:1|char:0" -> "Page 1"
   const formatLocator = (locator) => {
     if (!locator) return '';
     return locator
       .replace(/row:(\d+)/i, 'Row $1')
+      .replace(/page:(\d+)/i, 'Page $1')
       .replace(/char:\d+/i, '')
       .replace(/\|/g, ' ')
       .replace(/sheet:([^|]+)/i, 'Sheet $1')
@@ -40,10 +41,10 @@ export default function ResultCard({ result, rank, searchQuery }) {
     return `${sec.toFixed(1)}s (~${mins} mins)`;
   };
 
-  // Strip leading "Source: filename; row:..." prefix line from text
+  // Strip leading "Source: filename; row/page/sheet:..." prefix line from text
   const cleanSnippetText = (text) => {
     if (!text) return '';
-    return text.replace(/^Source:\s*[^;]+;\s*(?:row|sheet):[^\n\r]+(?:\r?\n)?/i, '').trim();
+    return text.replace(/^Source:\s*[^;]+;\s*(?:row|sheet|page):[^\s\n\r]+(?:\r?\n|\s+)?/i, '').trim();
   };
 
   const bodyText = cleanSnippetText(result.text);
