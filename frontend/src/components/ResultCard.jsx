@@ -1,11 +1,21 @@
 import React, { useState } from 'react';
-import { FileText, Copy, Check, ChevronDown, ChevronUp, Clock, Touchpad, Calendar, Eye, Layers } from 'lucide-react';
+import { FileText, Image as ImageIcon, Copy, Check, ChevronDown, ChevronUp, Clock, Touchpad, Calendar, Eye, Layers } from 'lucide-react';
 
 export default function ResultCard({ result, rank, searchQuery }) {
   const [copied, setCopied] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [showRawText, setShowRawText] = useState(false);
+  const [imgError, setImgError] = useState(false);
+
+  const isImage = Boolean(
+    result._kind === 'image' ||
+    result.score_type === 'cosine' ||
+    (result.source && /\.(png|jpe?g|webp|gif|svg|bmp)$/i.test(result.source)) ||
+    result.image_url
+  );
+
+  const imageSrc = result.image_url || (result.source && /^(https?:\/\/|\/)/i.test(result.source) ? result.source : null);
 
   const attrs = result.attributes || {};
   const hasStructuredTelemetry = Boolean(attrs.exhibit_id || attrs.duration_s || attrs.presses);
@@ -74,7 +84,14 @@ export default function ResultCard({ result, rank, searchQuery }) {
       <div className="card-top">
         <div className="card-source-info">
           <span className="rank-tag">#{rank}</span>
-          <FileText size={15} className="text-secondary" />
+          {isImage ? (
+            <>
+              <ImageIcon size={15} className="text-indigo" />
+              <span className="image-type-pill">Image</span>
+            </>
+          ) : (
+            <FileText size={15} className="text-secondary" />
+          )}
           <span className="source-name">{result.source || 'Dataset Source'}</span>
           {result.locator && (
             <span className="source-locator">{formatLocator(result.locator)}</span>
@@ -92,8 +109,40 @@ export default function ResultCard({ result, rank, searchQuery }) {
         </button>
       </div>
 
-      {/* Structured Telemetry Layout */}
-      {hasStructuredTelemetry ? (
+      {/* Image Preview Layout */}
+      {isImage ? (
+        <div className="card-image-section">
+          {imageSrc && !imgError ? (
+            <div className="card-image-wrapper">
+              <img
+                src={imageSrc}
+                alt={result.source || 'Retrieved Visual'}
+                className="result-preview-image"
+                onError={() => setImgError(true)}
+                loading="lazy"
+              />
+            </div>
+          ) : (
+            <div className="card-image-fallback">
+              <ImageIcon size={32} className="image-fallback-icon" />
+              <div className="image-fallback-meta">
+                <span className="image-fallback-title">{result.source || 'Retrieved Image Asset'}</span>
+                <span className="image-fallback-desc">
+                  {result.locator ? `Location: ${formatLocator(result.locator)} • ` : ''}
+                  {result.blob_id ? `Blob ID: ${result.blob_id.slice(0, 16)}...` : 'Visual Embedding in Vector Store'}
+                </span>
+              </div>
+            </div>
+          )}
+          {bodyText && (
+            <div className="card-body">
+              <p className="card-snippet">
+                {renderHighlighted(displayText, searchQuery)}
+              </p>
+            </div>
+          )}
+        </div>
+      ) : hasStructuredTelemetry ? (
         <div className="telemetry-card">
           <div className="telemetry-grid">
             {attrs.exhibit_id && (
@@ -192,9 +241,17 @@ export default function ResultCard({ result, rank, searchQuery }) {
         {showDetails && (
           <div className="details-drawer">
             <div className="detail-item">
-              <span className="detail-label">RRF Score:</span>
+              <span className="detail-label">
+                {result.score_type === 'cosine' ? 'Cosine Score:' : 'RRF Score:'}
+              </span>
               <span className="detail-val">{typeof result.score === 'number' ? result.score.toFixed(5) : result.score}</span>
             </div>
+            {typeof result.rerank_score === 'number' && (
+              <div className="detail-item">
+                <span className="detail-label">Rerank Score:</span>
+                <span className="detail-val font-semibold">{result.rerank_score.toFixed(4)}</span>
+              </div>
+            )}
             {result.ranks?.dense !== undefined && (
               <div className="detail-item">
                 <span className="detail-label">Dense Rank:</span>

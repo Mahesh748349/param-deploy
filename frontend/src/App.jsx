@@ -9,7 +9,7 @@ import StatusBanner from './components/StatusBanner';
 import AuthModal from './components/AuthModal';
 import { useAuth } from './context/AuthContext';
 import { checkHealth, retrieveQuery } from './api';
-import { Search, Shield, Lock, Sparkles, CheckCircle2 } from 'lucide-react';
+import { Search, Shield, Lock, Sparkles, CheckCircle2, AlertCircle, Info } from 'lucide-react';
 import './App.css';
 
 export default function App() {
@@ -119,7 +119,18 @@ export default function App() {
       clearTimeout(spinTimer);
       setIsSpinningUp(false);
 
-      setResults(data.text_results || []);
+      let combined = [];
+      if (Array.isArray(data.text_results)) {
+        combined = [...combined, ...data.text_results.map(r => ({ ...r, _kind: 'text' }))];
+      }
+      if (Array.isArray(data.image_results)) {
+        combined = [...combined, ...data.image_results.map(r => ({ ...r, _kind: 'image' }))];
+      }
+      if (combined.length === 0 && Array.isArray(data.results)) {
+        combined = data.results;
+      }
+
+      setResults(combined);
       setMeta(data);
       if (data._notice) {
         setNotice(data._notice);
@@ -136,7 +147,8 @@ export default function App() {
     } catch (err) {
       clearTimeout(spinTimer);
       setIsSpinningUp(false);
-      setError(err.message || 'Retrieval request failed.');
+      setResults([]); // Explicitly clear any stale or fallback results
+      setError(err.message || 'Not retrieved: The request took too long or failed.');
       console.error('Retrieve error:', err);
     } finally {
       setLoading(false);
@@ -260,13 +272,33 @@ export default function App() {
           </div>
         ) : !loading && (
           <div className="empty-state">
-            <div className="empty-icon-box">
-              <Search size={24} className="text-muted" />
-            </div>
-            <h3 className="empty-title">Search Knowledge Base</h3>
-            <p className="empty-desc">
-              Ask a question or search for interactions, dwell times, and exhibit telemetry across the indexed dataset.
-            </p>
+            {error ? (
+              <>
+                <div className="empty-icon-box empty-icon-error">
+                  <AlertCircle size={28} className="text-rose" />
+                </div>
+                <h3 className="empty-title text-rose">Not Retrieved</h3>
+                <p className="empty-desc">{error}</p>
+              </>
+            ) : notice ? (
+              <>
+                <div className="empty-icon-box empty-icon-notice">
+                  <Info size={28} className="text-amber" />
+                </div>
+                <h3 className="empty-title">No Relevant Records Found</h3>
+                <p className="empty-desc">{notice}</p>
+              </>
+            ) : (
+              <>
+                <div className="empty-icon-box">
+                  <Search size={24} className="text-muted" />
+                </div>
+                <h3 className="empty-title">Search Knowledge Base</h3>
+                <p className="empty-desc">
+                  Ask a question or search for interactions, dwell times, and exhibit telemetry across the indexed dataset.
+                </p>
+              </>
+            )}
           </div>
         )}
       </main>

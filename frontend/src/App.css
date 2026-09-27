@@ -867,6 +867,114 @@
   font-weight: 500;
 }
 
+/* Image preview inside ResultCard */
+.card-image-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.card-image-wrapper {
+  width: 100%;
+  max-height: 380px;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-subtle);
+}
+
+.result-preview-image {
+  max-width: 100%;
+  max-height: 380px;
+  object-fit: contain;
+  display: block;
+}
+
+.card-image-fallback {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.25rem;
+  background: var(--bg-tertiary);
+  border: 1px dashed var(--border-medium);
+  border-radius: var(--radius-sm);
+}
+
+.image-fallback-icon {
+  color: var(--accent-primary);
+  flex-shrink: 0;
+}
+
+.image-fallback-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.image-fallback-title {
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: var(--text-primary);
+}
+
+.image-fallback-desc {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.image-type-pill {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: rgba(99, 102, 241, 0.15);
+  color: #818cf8;
+  padding: 0.1rem 0.45rem;
+  border-radius: var(--radius-sm);
+}
+
+.image-count-pill,
+.cutoff-pill {
+  font-size: 0.72rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: var(--radius-full);
+  font-weight: 500;
+}
+
+.image-count-pill {
+  background: rgba(99, 102, 241, 0.15);
+  color: #818cf8;
+  border: 1px solid rgba(99, 102, 241, 0.3);
+}
+
+.cutoff-pill {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.empty-icon-error {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+}
+
+.empty-icon-notice {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+}
+
+.text-rose {
+  color: #f87171;
+}
+
+.text-amber {
+  color: #fbbf24;
+}
+
 /* --------------------------------------------------------------------------
    Empty State
    -------------------------------------------------------------------------- */

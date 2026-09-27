@@ -20,6 +20,12 @@ export default function ResultStats({
         <span className="results-count">
           <strong>{totalResultsCount}</strong> {totalResultsCount === 1 ? 'result' : 'results'}
         </span>
+        {meta?.image_results?.length > 0 && (
+          <span className="image-count-pill">{meta.image_results.length} images</span>
+        )}
+        {meta?._cutoff_applied && (
+          <span className="cutoff-pill" title="Low-relevance items filtered out (rerank cutoff >= 0.0)">Cutoff Applied</span>
+        )}
         {meta?._latency_ms && (
           <span className="results-latency">({meta._latency_ms}ms)</span>
         )}

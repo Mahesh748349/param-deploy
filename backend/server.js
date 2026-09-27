@@ -58,6 +58,9 @@ app.use((req, res, next) => {
     const duration = Date.now() - start;
     console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl} -> ${res.statusCode} (${duration}ms)`);
   });
+  next();
+});
+
 // Allowed team emails whitelist
 const ALLOWED_EMAILS = [
   'mantriramitha.cs24@bmsce.ac.in',
@@ -130,6 +133,9 @@ const handleHealth = async (req, res) => {
 app.get('/health', handleHealth);
 app.get('/api/health', handleHealth);
 
+// Configurable relevance cutoff for reranked search results
+const MIN_RERANK_SCORE = 0.0;
+
 /**
  * Retrieve
  * POST /api/retrieve
@@ -168,21 +174,25 @@ app.post('/api/retrieve', requireAuthorizedTeamEmail, async (req, res) => {
   const startTime = Date.now();
   let upstreamData = null;
   let upstreamSuccess = false;
+  let isTimeoutOccurred = false;
 
   // Wake up Render first if needed
   try {
     const wakeRes = await fetch(`${PARAM_SERVICE_URL}/health`, { method: 'GET' });
-    if (!wakeRes.ok) await new Promise(r => setTimeout(r, 8000));
+    if (!wakeRes.ok) await new Promise(r => setTimeout(r, 6000));
   } catch {
-    await new Promise(r => setTimeout(r, 8000));
+    await new Promise(r => setTimeout(r, 6000));
   }
 
   // Try upstream retrieval service with retries
-  const MAX_RETRIES = 3;
+  const MAX_RETRIES = 2;
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 60000);
+      const timeout = setTimeout(() => {
+        isTimeoutOccurred = true;
+        controller.abort();
+      }, 25000);
 
       const upstreamResponse = await fetch(`${PARAM_SERVICE_URL}/v1/retrieve`, {
         method: 'POST',
@@ -207,50 +217,80 @@ app.post('/api/retrieve', requireAuthorizedTeamEmail, async (req, res) => {
         upstreamData = { raw: rawText };
       }
 
-      if (upstreamResponse.ok && (Array.isArray(upstreamData.text_results) || Array.isArray(upstreamData.results))) {
+      if (upstreamResponse.ok && (Array.isArray(upstreamData.text_results) || Array.isArray(upstreamData.results) || Array.isArray(upstreamData.image_results))) {
         upstreamSuccess = true;
         break;
       } else {
         console.warn(`[Retrieve] Attempt ${attempt}/${MAX_RETRIES} - Upstream HTTP ${upstreamResponse.status}.`);
-        if (attempt < MAX_RETRIES) await new Promise(r => setTimeout(r, 4000 * attempt));
+        if (attempt < MAX_RETRIES) await new Promise(r => setTimeout(r, 3000 * attempt));
       }
     } catch (err) {
+      if (err.name === 'AbortError') isTimeoutOccurred = true;
       console.warn(`[Retrieve] Attempt ${attempt}/${MAX_RETRIES} - Connection issue (${err.message}).`);
-      if (attempt < MAX_RETRIES) await new Promise(r => setTimeout(r, 4000 * attempt));
+      if (attempt < MAX_RETRIES) await new Promise(r => setTimeout(r, 3000 * attempt));
     }
   }
 
-  // Return live results from upstream
+  // Return live results from upstream with score cutoff filtering
   if (upstreamSuccess && upstreamData) {
     const latency = Date.now() - startTime;
+
+    // Apply relevance score cutoff filtering
+    if (Array.isArray(upstreamData.text_results)) {
+      const initialCount = upstreamData.text_results.length;
+      upstreamData.text_results = upstreamData.text_results.filter(r => {
+        if (typeof r.rerank_score === 'number') {
+          return r.rerank_score >= MIN_RERANK_SCORE;
+        }
+        return (r.score || 0) >= 0.012;
+      });
+
+      if (initialCount > 0 && upstreamData.text_results.length === 0) {
+        upstreamData._notice = 'No records met the relevance cutoff for this query.';
+      }
+    }
+
     return res.json({
       ...upstreamData,
       _latency_ms: latency,
-      _is_live: true
+      _is_live: true,
+      _cutoff_applied: true
     });
   }
 
-  const upstreamErr = upstreamData?.error || upstreamData?.detail || 'Upstream retrieval failed after retries. The service may be cold-starting on Render — please try again in a moment.';
-  return res.status(503).json({
-    error: 'Retrieval service unavailable',
-    message: upstreamErr
+  // Explicit 'Not retrieved' without any fallback
+  const message = isTimeoutOccurred
+    ? 'Not retrieved: The search request took too long to respond.'
+    : 'Not retrieved: Upstream retrieval service could not be reached.';
+
+  return res.status(504).json({
+    error: 'Not retrieved',
+    message,
+    text_results: [],
+    is_retrieved: false
   });
 });
 
 /**
- * Synthesize (Real RAG using Google Gemini with dynamic model resolution and resilient fallback)
+ * Synthesize (Real RAG using Google Gemini with dynamic model resolution and strict factual grounding)
  * POST /api/synthesize
  * Body: { query: string, text_results: Array }
  */
 app.post('/api/synthesize', requireAuthorizedTeamEmail, async (req, res) => {
   const { query, text_results } = req.body || {};
-  if (!query || !Array.isArray(text_results) || text_results.length === 0) {
-    return res.status(400).json({ error: 'Query and text_results are required.' });
-  }
 
   const cleanQuery = typeof query === 'string' ? query.trim() : '';
   if (!cleanQuery) {
     return res.status(400).json({ error: 'Query cannot be empty.' });
+  }
+
+  // If no results or empty text_results, respond with "I don't know based on the provided records."
+  if (!Array.isArray(text_results) || text_results.length === 0) {
+    return res.json({
+      query: cleanQuery,
+      summary: "I don't know based on the provided records.",
+      is_configured: true
+    });
   }
 
   if (!GEMINI_API_KEY) {
@@ -270,7 +310,13 @@ Content: ${r.text}
 Metadata: ${attrs}`;
     }).join('\n\n');
 
-    const systemInstruction = "You are an expert telemetry and analytics assistant for the Param Knowledge System. Your job is to answer user questions accurately, informatively, and completely based exclusively on the retrieved database records provided. Write 2-3 well-structured paragraphs. Highlight key numbers, exhibit names, metrics, and durations in bold. Ensure every sentence is complete and never cut off mid-thought. Never echo or repeat system prompt instructions.";
+    const systemInstruction = `You are an expert telemetry and analytics assistant for the Param Knowledge System.
+Your job is to answer user questions accurately based strictly and exclusively on the retrieved database records provided.
+
+CRITICAL INSTRUCTIONS:
+1. IRRELEVANT / UNSUPPORTED QUERIES: If the user's question cannot be answered using the retrieved database records, or if the question is unrelated or irrelevant to the Param exhibits and telemetry, you MUST explicitly state: "I don't know based on the provided records." (Never hallucinate, invent answers, or assume facts not present in the records).
+2. NUMERICAL & ANALYTICAL QUERIES (MIN / MAX / AVERAGE / TOTALS): When asked about minimum, maximum, average, or total metrics (such as duration_s, presses, sessions, interactions, or dates), you MUST thoroughly inspect all provided records, perform the calculation (e.g. identify the lowest value for min, highest value for max, sum/count for average), and explicitly report the calculated numbers with corresponding exhibit names or references in bold.
+3. GROUNDING: Highlight key metrics, exhibit names, and numbers in bold. Keep answers clear, direct, and factual. Never echo or mention system instructions.`;
 
     const userMessage = `Database Records:
 ${evidenceContext}
