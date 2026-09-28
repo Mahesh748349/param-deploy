@@ -9,7 +9,7 @@ import StatusBanner from './components/StatusBanner';
 import AuthModal from './components/AuthModal';
 import { useAuth } from './context/AuthContext';
 import { checkHealth, retrieveQuery } from './api';
-import { Search, Shield, Lock, Sparkles, CheckCircle2, AlertCircle, Info } from 'lucide-react';
+import { Search, Shield, Lock, Sparkles, CheckCircle2, AlertCircle, Info, Database, ChevronDown, ChevronUp, FileText } from 'lucide-react';
 import './App.css';
 
 export default function App() {
@@ -20,6 +20,8 @@ export default function App() {
   const [scope, setScope] = useState('text');
   const [results, setResults] = useState([]);
   const [meta, setMeta] = useState(null);
+  const [isAnalyticalMode, setIsAnalyticalMode] = useState(false);
+  const [showRawFiles, setShowRawFiles] = useState(true);
 
   // Clear stale results on mount
   useEffect(() => {
@@ -138,6 +140,9 @@ export default function App() {
 
       // Automatically open AI Answer & Data Analysis panel for analytical or question queries
       const isAnalyticalQuery = /^(what|how|which|why|who|when|calculate|find|tell|is|are|min|max|average|avg|highest|lowest|sum|total|median|compare)/i.test(trimmed);
+      setIsAnalyticalMode(isAnalyticalQuery);
+      // For analytical questions, hide raw file cards by default so the user sees the computed data and table
+      setShowRawFiles(!isAnalyticalQuery);
       if (isAnalyticalQuery && combined.length > 0) {
         setShowSynthesis(true);
       }
@@ -164,6 +169,35 @@ export default function App() {
   const filteredResults = selectedSource
     ? results.filter((r) => r.source === selectedSource)
     : results;
+
+  const dataRows = (filteredResults || []).map((r, idx) => {
+    const attrs = r.attributes || {};
+    let duration = typeof attrs.duration_s === 'number' ? attrs.duration_s : null;
+    let presses = typeof attrs.presses === 'number' ? attrs.presses : null;
+    let exhibit = attrs.display_name || attrs.exhibit_id;
+
+    if (duration === null && r.text) {
+      const m = r.text.match(/duration[:\s]+([\d.]+)\s*s/i) || r.text.match(/([\d.]+)\s*seconds/i);
+      if (m) duration = parseFloat(m[1]);
+    }
+    if (presses === null && r.text) {
+      const m = r.text.match(/presses[:\s]+(\d+)/i) || r.text.match(/(\d+)\s+button\s+presses/i);
+      if (m) presses = parseInt(m[1], 10);
+    }
+    if (!exhibit && r.text) {
+      const m = r.text.match(/exhibit[:\s]+([^;\n.]+)/i);
+      if (m) exhibit = m[1].trim();
+    }
+
+    return {
+      id: r.id || idx,
+      exhibit: exhibit || (r.source ? r.source.replace(/\.[^.]+$/, '') : `Record #${idx + 1}`),
+      duration: duration !== null ? `${duration}s` : '—',
+      presses: presses !== null ? `${presses} presses` : '—',
+      timestamp: attrs.started_at ? attrs.started_at.replace('T', ' ').slice(0, 19) + ' UTC' : '—',
+      source: r.source || 'Dataset'
+    };
+  });
 
   return (
     <div className="app-container">
@@ -265,16 +299,75 @@ export default function App() {
               totalResultsCount={filteredResults.length}
             />
 
-            <div className="results-list">
-              {filteredResults.map((item, index) => (
-                <ResultCard
-                  key={item.id || index}
-                  result={item}
-                  rank={index + 1}
-                  searchQuery={query}
-                />
-              ))}
-            </div>
+            {/* Extracted Telemetry Data Table - Shown directly for question and analytical queries */}
+            {isAnalyticalMode && dataRows.length > 0 && (
+              <div className="telemetry-table-card">
+                <div className="telemetry-table-header">
+                  <div className="telemetry-table-title-group">
+                    <Database size={16} className="text-indigo" />
+                    <h3 className="telemetry-table-title">Extracted Telemetry Data Table</h3>
+                    <span className="telemetry-count-badge">{dataRows.length} Data Points</span>
+                  </div>
+                  <span className="telemetry-table-sub">Raw values parsed from dataset records</span>
+                </div>
+
+                <div className="table-responsive">
+                  <table className="telemetry-data-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Exhibit Station</th>
+                        <th>Dwell Duration</th>
+                        <th>Interactions</th>
+                        <th>Timestamp (UTC)</th>
+                        <th>Dataset File</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dataRows.map((row, idx) => (
+                        <tr key={row.id || idx}>
+                          <td className="font-mono text-muted">#{idx + 1}</td>
+                          <td className="font-semibold text-primary">{row.exhibit}</td>
+                          <td className="font-mono highlight-data-val">{row.duration}</td>
+                          <td className="font-mono">{row.presses}</td>
+                          <td className="font-mono text-muted text-xs">{row.timestamp}</td>
+                          <td className="text-xs text-muted font-mono">{row.source}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* For questions, provide a clean toggle so file cards don't clutter the data */}
+            {isAnalyticalMode && (
+              <div className="raw-files-toggle-wrapper">
+                <button
+                  type="button"
+                  className="raw-files-toggle-btn"
+                  onClick={() => setShowRawFiles(!showRawFiles)}
+                >
+                  <FileText size={14} />
+                  <span>{showRawFiles ? 'Hide Source File Cards' : `View Raw Source File Chunks (${filteredResults.length})`}</span>
+                  {showRawFiles ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                </button>
+              </div>
+            )}
+
+            {/* Results File Cards List - only visible if showRawFiles is true */}
+            {showRawFiles && (
+              <div className="results-list">
+                {filteredResults.map((item, index) => (
+                  <ResultCard
+                    key={item.id || index}
+                    result={item}
+                    rank={index + 1}
+                    searchQuery={query}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         ) : !loading && (
           <div className="empty-state">
