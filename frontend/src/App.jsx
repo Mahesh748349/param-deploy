@@ -136,6 +136,12 @@ export default function App() {
         setNotice(data._notice);
       }
 
+      // Automatically open AI Answer & Data Analysis panel for analytical or question queries
+      const isAnalyticalQuery = /^(what|how|which|why|who|when|calculate|find|tell|is|are|min|max|average|avg|highest|lowest|sum|total|median|compare)/i.test(trimmed);
+      if (isAnalyticalQuery && combined.length > 0) {
+        setShowSynthesis(true);
+      }
+
       // Save to history
       setHistory((prev) => {
         const updated = [trimmed, ...prev.filter((q) => q !== trimmed)].slice(0, 6);
