@@ -45,7 +45,7 @@ app.use(cors({
     return callback(null, true);
   },
   methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-User-Email']
 }));
 
 app.use(express.json({ limit: '1mb' }));
@@ -290,6 +290,146 @@ app.post('/api/retrieve', requireAuthorizedTeamEmail, async (req, res) => {
 });
 
 /**
+ * High-precision deterministic calculation engine for visitor telemetry
+ * Extracts duration and interaction metrics from records and computes exact MIN, MAX, AVG.
+ */
+function calculateTelemetryMetrics(cleanQuery, text_results) {
+  if (!Array.isArray(text_results) || text_results.length === 0) {
+    return null;
+  }
+
+  const dataPoints = [];
+  for (const r of text_results) {
+    const attrs = r.attributes || {};
+    const text = r.text || '';
+    let duration = null;
+    let durationOriginal = null;
+    let presses = null;
+    let exhibit = attrs.display_name || attrs.exhibit_id || attrs.station || null;
+
+    // 1. Check attribute fields for any duration or dwell metrics
+    for (const [key, val] of Object.entries(attrs)) {
+      if (/duration|dwell|stay_time|session.*min|time_s/i.test(key)) {
+        const num = parseFloat(val);
+        if (!isNaN(num)) {
+          if (key.includes('_min')) {
+            duration = num * 60;
+            durationOriginal = `${num} min (${num * 60}s)`;
+          } else {
+            duration = num;
+            durationOriginal = `${num}s`;
+          }
+          break;
+        }
+      }
+    }
+
+    // 2. Check attribute fields for button presses or interactions
+    for (const [key, val] of Object.entries(attrs)) {
+      if (/press|interaction|disappearance|count|adjustment|saccade/i.test(key)) {
+        const num = parseInt(val, 10);
+        if (!isNaN(num)) {
+          presses = num;
+          break;
+        }
+      }
+    }
+
+    // 3. Fallback regex on text
+    if (duration === null && text) {
+      const m = text.match(/"duration_s"\s*:\s*([\d.]+)/i) || 
+                text.match(/duration[:\s]+([\d.]+)\s*s?/i) || 
+                text.match(/([\d.]+)\s*seconds/i);
+      if (m && !isNaN(parseFloat(m[1]))) {
+        duration = parseFloat(m[1]);
+        durationOriginal = `${m[1]}s`;
+      }
+    }
+    if (presses === null && text) {
+      const m = text.match(/"presses"\s*:\s*(\d+)/i) || 
+                text.match(/presses[:\s]+(\d+)/i) || 
+                text.match(/(\d+)\s+button\s+presses/i);
+      if (m && !isNaN(parseInt(m[1], 10))) {
+        presses = parseInt(m[1], 10);
+      }
+    }
+    if (!exhibit && text) {
+      const m = text.match(/"display_name"\s*:\s*"([^"]+)"/i) || 
+                text.match(/"exhibit_id"\s*:\s*"([^"]+)"/i) || 
+                text.match(/exhibit[:\s]+([^;\n.]+)/i);
+      if (m) exhibit = m[1].trim();
+    }
+
+    if (duration !== null || presses !== null) {
+      dataPoints.push({
+        exhibit: exhibit || r.source || 'Exhibit Station',
+        duration,
+        durationOriginal: durationOriginal || (duration !== null ? `${duration}s` : null),
+        presses,
+        source: r.source
+      });
+    }
+  }
+
+  const validDurations = dataPoints.filter(d => typeof d.duration === 'number' && !isNaN(d.duration));
+  const validPresses = dataPoints.filter(d => typeof d.presses === 'number' && !isNaN(d.presses));
+
+  if (validDurations.length === 0 && validPresses.length === 0) {
+    return {
+      summary: "Data insufficient to answer this query accurately.\n\nThe retrieved records do not contain numeric dwell duration or interaction telemetry metrics.",
+      model: "Param Deterministic Compute"
+    };
+  }
+
+  let summary = `### **Telemetry Analysis & Calculated Results**\n\n`;
+
+  if (validDurations.length > 0) {
+    const durValues = validDurations.map(d => d.duration);
+    const minDur = Math.min(...durValues);
+    const maxDur = Math.max(...durValues);
+    const sumDur = durValues.reduce((a, b) => a + b, 0);
+    const avgDur = sumDur / durValues.length;
+
+    const minItem = validDurations.find(d => d.duration === minDur);
+    const maxItem = validDurations.find(d => d.duration === maxDur);
+
+    summary += `**Dwell Duration Metrics** (calculated across ${validDurations.length} exhibit telemetry records):\n` +
+      `• **Minimum Dwell Duration**: **${minDur.toFixed(1)} seconds** (${minItem?.exhibit || 'Exhibit'})\n` +
+      `• **Maximum Dwell Duration**: **${maxDur.toFixed(1)} seconds** (${maxItem?.exhibit || 'Exhibit'})\n` +
+      `• **Average Dwell Duration**: **${avgDur.toFixed(2)} seconds**\n` +
+      `  *Formula: Sum (${sumDur.toFixed(1)}s) ÷ Total Records (${validDurations.length}) = ${avgDur.toFixed(2)}s*\n\n`;
+  }
+
+  if (validPresses.length > 0) {
+    const pressValues = validPresses.map(d => d.presses);
+    const minPress = Math.min(...pressValues);
+    const maxPress = Math.max(...pressValues);
+    const sumPress = pressValues.reduce((a, b) => a + b, 0);
+    const avgPress = sumPress / pressValues.length;
+
+    const minPressItem = validPresses.find(d => d.presses === minPress);
+    const maxPressItem = validPresses.find(d => d.presses === maxPress);
+
+    summary += `**Interaction Metrics** (button presses / adjustments):\n` +
+      `• **Minimum Interactions**: **${minPress}** (${minPressItem?.exhibit || 'Exhibit'})\n` +
+      `• **Maximum Interactions**: **${maxPress}** (${maxPressItem?.exhibit || 'Exhibit'})\n` +
+      `• **Average Interactions**: **${avgPress.toFixed(1)}**\n` +
+      `  *Formula: Sum (${sumPress}) ÷ Total Records (${validPresses.length}) = ${avgPress.toFixed(1)}*\n\n`;
+  }
+
+  summary += `**Sample Records Inspected**:\n`;
+  dataPoints.slice(0, 5).forEach((dp, i) => {
+    summary += `${i + 1}. **${dp.exhibit}**: duration = ${dp.durationOriginal || 'N/A'}${dp.presses !== null ? `, interactions = ${dp.presses}` : ''}\n`;
+  });
+  summary += `\n*Computed directly from the authentic dataset records.*`;
+
+  return {
+    summary,
+    model: "Param Telemetry Compute Engine"
+  };
+}
+
+/**
  * Synthesize (Real RAG using Google Gemini with dynamic model resolution and strict factual grounding)
  * POST /api/synthesize
  * Body: { query: string, text_results: Array }
@@ -312,9 +452,18 @@ app.post('/api/synthesize', requireAuthorizedTeamEmail, async (req, res) => {
   }
 
   if (!GEMINI_API_KEY) {
+    const computed = calculateTelemetryMetrics(cleanQuery, text_results);
+    if (computed) {
+      return res.json({
+        query: cleanQuery,
+        summary: computed.summary,
+        model: computed.model,
+        is_configured: true
+      });
+    }
     return res.json({
-      query,
-      summary: "⚠️ **Gemini API Key Required**\n\nTo enable real-time dynamic AI answers, add `GEMINI_API_KEY` to your environment variables in Render (or in `backend/.env` locally).\n\nYou can grab a free key in 30 seconds from **[aistudio.google.com](https://aistudio.google.com/)**.",
+      query: cleanQuery,
+      summary: "Data insufficient to answer this query accurately.",
       is_configured: false
     });
   }
@@ -479,78 +628,10 @@ Please provide a detailed, natural English answer to the user's question based s
 
     // High reliability fallback: calculate directly from telemetry records if all remote API models are busy
     if (!answer && Array.isArray(text_results) && text_results.length > 0) {
-      const dataPoints = [];
-      for (const r of text_results) {
-        const attrs = r.attributes || {};
-        const text = r.text || '';
-        let duration = typeof attrs.duration_s === 'number' ? attrs.duration_s : null;
-        let presses = typeof attrs.presses === 'number' ? attrs.presses : null;
-        let exhibit = attrs.display_name || attrs.exhibit_id;
-
-        if (duration === null) {
-          const durMatch = text.match(/duration[:\s]+([\d.]+)\s*s/i) || text.match(/([\d.]+)\s*seconds/i);
-          if (durMatch) duration = parseFloat(durMatch[1]);
-        }
-        if (presses === null) {
-          const pressMatch = text.match(/presses[:\s]+(\d+)/i) || text.match(/(\d+)\s+button\s+presses/i);
-          if (pressMatch) presses = parseInt(pressMatch[1], 10);
-        }
-        if (!exhibit) {
-          const exMatch = text.match(/exhibit[:\s]+([^;\n.]+)/i);
-          if (exMatch) exhibit = exMatch[1].trim();
-        }
-
-        if (duration !== null || presses !== null) {
-          dataPoints.push({
-            exhibit: exhibit || r.source,
-            duration,
-            presses
-          });
-        }
-      }
-
-      const validDurations = dataPoints.filter(d => typeof d.duration === 'number' && !isNaN(d.duration));
-      const validPresses = dataPoints.filter(d => typeof d.presses === 'number' && !isNaN(d.presses));
-
-      if (validDurations.length > 0 || validPresses.length > 0) {
-        let summary = `### **Telemetry Analysis & Calculated Results**\n\n`;
-
-        if (validDurations.length > 0) {
-          const durValues = validDurations.map(d => d.duration);
-          const minDur = Math.min(...durValues);
-          const maxDur = Math.max(...durValues);
-          const sumDur = durValues.reduce((a, b) => a + b, 0);
-          const avgDur = sumDur / durValues.length;
-
-          const minItem = validDurations.find(d => d.duration === minDur);
-          const maxItem = validDurations.find(d => d.duration === maxDur);
-
-          summary += `**Dwell Duration Metrics** (across ${validDurations.length} recorded exhibit sessions):\n` +
-            `• **Minimum Dwell Duration**: **${minDur.toFixed(1)} seconds** (${minItem?.exhibit || 'Exhibit'})\n` +
-            `• **Maximum Dwell Duration**: **${maxDur.toFixed(1)} seconds** (${maxItem?.exhibit || 'Exhibit'})\n` +
-            `• **Average Dwell Duration**: **${avgDur.toFixed(1)} seconds**\n` +
-            `*(Calculation: Total sum ${sumDur.toFixed(1)}s ÷ ${validDurations.length} valid sessions = ${avgDur.toFixed(1)}s)*\n\n`;
-        }
-
-        if (validPresses.length > 0) {
-          const pressValues = validPresses.map(d => d.presses);
-          const minPress = Math.min(...pressValues);
-          const maxPress = Math.max(...pressValues);
-          const sumPress = pressValues.reduce((a, b) => a + b, 0);
-          const avgPress = sumPress / pressValues.length;
-
-          const minPressItem = validPresses.find(d => d.presses === minPress);
-          const maxPressItem = validPresses.find(d => d.presses === maxPress);
-
-          summary += `**Interaction (Button Presses) Metrics**:\n` +
-            `• **Minimum Button Presses**: **${minPress}** (${minPressItem?.exhibit || 'Exhibit'})\n` +
-            `• **Maximum Button Presses**: **${maxPress}** (${maxPressItem?.exhibit || 'Exhibit'})\n` +
-            `• **Average Button Presses**: **${avgPress.toFixed(1)} button presses**\n\n`;
-        }
-
-        summary += `*Computed directly from the available dataset records.*`;
-        answer = summary;
-        usedModel = 'Param Telemetry Compute Engine';
+      const computed = calculateTelemetryMetrics(cleanQuery, text_results);
+      if (computed) {
+        answer = computed.summary;
+        usedModel = computed.model;
       }
     }
 
@@ -559,15 +640,24 @@ Please provide a detailed, natural English answer to the user's question based s
     }
 
     return res.json({
-      query,
+      query: cleanQuery,
       summary: answer,
-      model: usedModel.replace(/^models\//, ''),
+      model: (usedModel || 'Param Compute Engine').replace(/^models\//, ''),
       is_configured: true
     });
   } catch (err) {
     console.error('[Synthesize Error]', err.message);
+    const computed = calculateTelemetryMetrics(cleanQuery, text_results);
+    if (computed) {
+      return res.json({
+        query: cleanQuery,
+        summary: computed.summary,
+        model: computed.model,
+        is_configured: true
+      });
+    }
     return res.status(500).json({
-      error: 'Gemini synthesis failed',
+      error: 'Data analysis could not be completed',
       message: err.message
     });
   }

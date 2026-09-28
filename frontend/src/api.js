@@ -21,10 +21,29 @@ async function getAuthHeaders() {
   return headers;
 }
 
+async function parseJsonResponse(res, defaultErrorMsg = 'Request failed') {
+  const text = await res.text();
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    // text was not valid JSON
+  }
+
+  if (!res.ok) {
+    const errorMsg = data?.message || data?.error || (text && text.length < 200 && !text.includes('<!DOCTYPE') ? text : `${defaultErrorMsg} (HTTP ${res.status})`);
+    throw new Error(errorMsg);
+  }
+
+  if (!data) {
+    throw new Error(`Empty response from backend server (HTTP ${res.status})`);
+  }
+  return data;
+}
+
 export async function checkHealth() {
   const res = await fetch(`${API_BASE}/api/health`);
-  if (!res.ok) throw new Error(`Health check returned ${res.status}`);
-  return res.json();
+  return parseJsonResponse(res, 'Health check failed');
 }
 
 export async function retrieveQuery({ query, top_k = 5, scope = 'text' }) {
@@ -35,11 +54,7 @@ export async function retrieveQuery({ query, top_k = 5, scope = 'text' }) {
     body: JSON.stringify({ query, top_k, scope })
   });
 
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.message || data.error || `HTTP error ${res.status}`);
-  }
-  return data;
+  return parseJsonResponse(res, 'Search retrieval request failed');
 }
 
 export async function synthesizeEvidence({ query, text_results }) {
@@ -50,9 +65,5 @@ export async function synthesizeEvidence({ query, text_results }) {
     body: JSON.stringify({ query, text_results })
   });
 
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.message || data.error || 'Failed to synthesize');
-  }
-  return data;
+  return parseJsonResponse(res, 'AI synthesis request failed');
 }

@@ -172,29 +172,68 @@ export default function App() {
 
   const dataRows = (filteredResults || []).map((r, idx) => {
     const attrs = r.attributes || {};
-    let duration = typeof attrs.duration_s === 'number' ? attrs.duration_s : null;
-    let presses = typeof attrs.presses === 'number' ? attrs.presses : null;
-    let exhibit = attrs.display_name || attrs.exhibit_id;
+    let duration = null;
+    let durationDisplay = null;
+    let presses = null;
+    let exhibit = attrs.display_name || attrs.exhibit_id || attrs.station || null;
 
-    if (duration === null && r.text) {
-      const m = r.text.match(/duration[:\s]+([\d.]+)\s*s/i) || r.text.match(/([\d.]+)\s*seconds/i);
-      if (m) duration = parseFloat(m[1]);
+    // 1. Check attribute fields for any duration or dwell metrics
+    for (const [key, val] of Object.entries(attrs)) {
+      if (/duration|dwell|stay_time|session.*min|time_s/i.test(key)) {
+        const num = parseFloat(val);
+        if (!isNaN(num)) {
+          if (key.includes('_min')) {
+            duration = num * 60;
+            durationDisplay = `${num} min (${num * 60}s)`;
+          } else {
+            duration = num;
+            durationDisplay = `${num}s`;
+          }
+          break;
+        }
+      }
+    }
+
+    // 2. Check attribute fields for button presses or interactions
+    for (const [key, val] of Object.entries(attrs)) {
+      if (/press|interaction|disappearance|count|adjustment|saccade/i.test(key)) {
+        const num = parseInt(val, 10);
+        if (!isNaN(num)) {
+          presses = `${num} ${key.replace(/_/g, ' ')}`;
+          break;
+        }
+      }
+    }
+
+    // 3. Fallback regex on text
+    if (durationDisplay === null && r.text) {
+      const m = r.text.match(/"duration_s"\s*:\s*([\d.]+)/i) ||
+                r.text.match(/duration[:\s]+([\d.]+)\s*s?/i) ||
+                r.text.match(/([\d.]+)\s*seconds/i);
+      if (m && !isNaN(parseFloat(m[1]))) {
+        duration = parseFloat(m[1]);
+        durationDisplay = `${m[1]}s`;
+      }
     }
     if (presses === null && r.text) {
-      const m = r.text.match(/presses[:\s]+(\d+)/i) || r.text.match(/(\d+)\s+button\s+presses/i);
-      if (m) presses = parseInt(m[1], 10);
+      const m = r.text.match(/"presses"\s*:\s*(\d+)/i) ||
+                r.text.match(/presses[:\s]+(\d+)/i) ||
+                r.text.match(/(\d+)\s+button\s+presses/i);
+      if (m) presses = `${m[1]} presses`;
     }
     if (!exhibit && r.text) {
-      const m = r.text.match(/exhibit[:\s]+([^;\n.]+)/i);
+      const m = r.text.match(/"display_name"\s*:\s*"([^"]+)"/i) ||
+                r.text.match(/"exhibit_id"\s*:\s*"([^"]+)"/i) ||
+                r.text.match(/exhibit[:\s]+([^;\n.]+)/i);
       if (m) exhibit = m[1].trim();
     }
 
     return {
       id: r.id || idx,
       exhibit: exhibit || (r.source ? r.source.replace(/\.[^.]+$/, '') : `Record #${idx + 1}`),
-      duration: duration !== null ? `${duration}s` : '—',
-      presses: presses !== null ? `${presses} presses` : '—',
-      timestamp: attrs.started_at ? attrs.started_at.replace('T', ' ').slice(0, 19) + ' UTC' : '—',
+      duration: durationDisplay || (duration !== null ? `${duration}s` : '—'),
+      presses: presses || '—',
+      timestamp: attrs.started_at ? attrs.started_at.replace('T', ' ').slice(0, 19) + ' UTC' : (attrs.recorded_at ? attrs.recorded_at.replace('T', ' ').slice(0, 19) + ' UTC' : '—'),
       source: r.source || 'Dataset'
     };
   });
