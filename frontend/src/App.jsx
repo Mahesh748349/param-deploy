@@ -7,6 +7,7 @@ import SynthesisPanel from './components/SynthesisPanel';
 import RawJsonModal from './components/RawJsonModal';
 import StatusBanner from './components/StatusBanner';
 import AuthModal from './components/AuthModal';
+import AnalyticsMetricsCard from './components/AnalyticsMetricsCard';
 import { useAuth } from './context/AuthContext';
 import { checkHealth, retrieveQuery } from './api';
 import { Search, Shield, Lock, Sparkles, CheckCircle2, AlertCircle, Info, Database, ChevronDown, ChevronUp, FileText } from 'lucide-react';
@@ -141,11 +142,9 @@ export default function App() {
       // Automatically open AI Answer & Data Analysis panel for analytical or question queries
       const isAnalyticalQuery = /^(what|how|which|why|who|when|calculate|find|tell|is|are|min|max|average|avg|highest|lowest|sum|total|median|compare)/i.test(trimmed);
       setIsAnalyticalMode(isAnalyticalQuery);
-      // For analytical questions, hide raw file cards by default so the user sees the computed data and table
+      // For analytical questions, hide raw files and show dedicated analytics card rather than AI analysis dump
       setShowRawFiles(!isAnalyticalQuery);
-      if (isAnalyticalQuery && combined.length > 0) {
-        setShowSynthesis(true);
-      }
+      setShowSynthesis(!isAnalyticalQuery && combined.length > 0);
 
       // Save to history
       setHistory((prev) => {
@@ -232,6 +231,7 @@ export default function App() {
       id: r.id || idx,
       exhibit: exhibit || (r.source ? r.source.replace(/\.[^.]+$/, '') : `Record #${idx + 1}`),
       duration: durationDisplay || (duration !== null ? `${duration}s` : '—'),
+      durationNum: duration,
       presses: presses || '—',
       timestamp: attrs.started_at ? attrs.started_at.replace('T', ' ').slice(0, 19) + ' UTC' : (attrs.recorded_at ? attrs.recorded_at.replace('T', ' ').slice(0, 19) + ' UTC' : '—'),
       source: r.source || 'Dataset'
@@ -337,6 +337,15 @@ export default function App() {
               setShowRawJson={setShowRawJson}
               totalResultsCount={filteredResults.length}
             />
+
+            {/* Dedicated Telemetry Analytics & Whole Dataset Metrics Card */}
+            {isAnalyticalMode && (
+              <AnalyticsMetricsCard
+                analytics={meta?._dataset_analytics}
+                query={query}
+                dataRows={dataRows}
+              />
+            )}
 
             {/* Extracted Telemetry Data Table - Shown directly for question and analytical queries */}
             {isAnalyticalMode && dataRows.length > 0 && (
