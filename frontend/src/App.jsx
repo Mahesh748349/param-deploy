@@ -353,10 +353,10 @@ export default function App() {
                 <div className="telemetry-table-header">
                   <div className="telemetry-table-title-group">
                     <Database size={16} className="text-indigo" />
-                    <h3 className="telemetry-table-title">Extracted Telemetry Data Table</h3>
-                    <span className="telemetry-count-badge">{dataRows.length} Data Points</span>
+                    <h3 className="telemetry-table-title">Exhibit Telemetry Session Records</h3>
+                    <span className="telemetry-count-badge">Sample View ({dataRows.length} Rows from 22,722 Dataset)</span>
                   </div>
-                  <span className="telemetry-table-sub">Raw values parsed from dataset records</span>
+                  <span className="telemetry-table-sub">Individual visitor sessions from the 22,722-session archive</span>
                 </div>
 
                 <div className="table-responsive">
