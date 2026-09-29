@@ -34,7 +34,9 @@ export default function App() {
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
   const [health, setHealth] = useState(null);
-  const [selectedSource, setSelectedSource] = useState('');
+  const [selectedSheet, setSelectedSheet] = useState('');
+  const [selectedFile, setSelectedFile] = useState('');
+  const [selectedExhibit, setSelectedExhibit] = useState('');
   const [sortField, setSortField] = useState('duration');
   const [sortOrder, setSortOrder] = useState('asc');
   const [showSynthesis, setShowSynthesis] = useState(false);
@@ -167,19 +169,73 @@ export default function App() {
     }
   };
 
+  const handleSheetChange = (sheet) => {
+    setSelectedSheet(sheet);
+    if (sheet) {
+      const hasRows = (results || []).some(r => {
+        const loc = (r.locator || '').toLowerCase();
+        const attr = (r.attributes?.sheet || '').toLowerCase();
+        return loc.includes(sheet.toLowerCase()) || attr === sheet.toLowerCase();
+      });
+      if (!hasRows) {
+        setQuery(sheet);
+        handleSearch(sheet);
+      }
+    }
+  };
+
+  const handleExhibitChange = (exhibit) => {
+    setSelectedExhibit(exhibit);
+    if (exhibit) {
+      const hasRows = (results || []).some(r => {
+        const name = (r.attributes?.display_name || r.attributes?.exhibit_id || '').toLowerCase();
+        return name.includes(exhibit.toLowerCase());
+      });
+      if (!hasRows) {
+        setQuery(exhibit);
+        handleSearch(exhibit);
+      }
+    }
+  };
+
+  const handleResetFilters = () => {
+    setSelectedSheet('');
+    setSelectedFile('');
+    setSelectedExhibit('');
+    setSortField('duration');
+    setSortOrder('asc');
+  };
+
   const filteredResults = (results || []).filter((r) => {
-    if (!selectedSource) return true;
-    if (selectedSource.startsWith('sheet:')) {
-      const targetSheet = selectedSource.replace('sheet:', '').trim().toLowerCase();
-      const locatorSheet = r.locator ? (r.locator.match(/sheet:([^|]+)/i)?.[1] || '').trim().toLowerCase() : '';
-      const attrSheet = (r.attributes?.sheet || '').trim().toLowerCase();
-      return locatorSheet === targetSheet || attrSheet === targetSheet;
+    const attrs = r.attributes || {};
+
+    // 1. Sheet Filter
+    if (selectedSheet) {
+      const target = selectedSheet.toLowerCase();
+      const loc = (r.locator || '').toLowerCase();
+      const attrSheet = (attrs.sheet || '').toLowerCase();
+      const text = (r.text || '').toLowerCase();
+      const isMatch = loc.includes(`sheet:${target}`) || loc.includes(target) || attrSheet === target || text.includes(target);
+      if (!isMatch) return false;
     }
-    if (selectedSource.startsWith('file:')) {
-      const targetFile = selectedSource.replace('file:', '').trim();
-      return r.source === targetFile;
+
+    // 2. File Filter
+    if (selectedFile) {
+      if (r.source !== selectedFile) return false;
     }
-    return r.source === selectedSource;
+
+    // 3. Exhibit Filter
+    if (selectedExhibit) {
+      const target = selectedExhibit.toLowerCase();
+      const exName = (attrs.display_name || attrs.exhibit_id || attrs.station || '').toLowerCase();
+      const loc = (r.locator || '').toLowerCase();
+      const text = (r.text || '').toLowerCase();
+      if (!exName.includes(target) && !loc.includes(target) && !text.includes(target)) {
+        return false;
+      }
+    }
+
+    return true;
   });
 
   const dataRows = (filteredResults || []).map((r, idx) => {
@@ -389,10 +445,14 @@ export default function App() {
         {results.length > 0 ? (
           <div className="results-section">
             <ResultStats
-              results={results}
               meta={meta}
-              selectedSource={selectedSource}
-              setSelectedSource={setSelectedSource}
+              selectedSheet={selectedSheet}
+              setSelectedSheet={handleSheetChange}
+              selectedFile={selectedFile}
+              setSelectedFile={setSelectedFile}
+              selectedExhibit={selectedExhibit}
+              setSelectedExhibit={handleExhibitChange}
+              onResetFilters={handleResetFilters}
               sortField={sortField}
               setSortField={setSortField}
               sortOrder={sortOrder}

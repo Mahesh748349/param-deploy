@@ -1,11 +1,62 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Sparkles, Code, Filter, ArrowUpDown, ArrowUp, ArrowDown, ChevronDown, Check, FileSpreadsheet, FileText, Layers } from 'lucide-react';
+import {
+  Sparkles,
+  Code,
+  FileSpreadsheet,
+  FileText,
+  Landmark,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  ChevronDown,
+  Check,
+  RotateCcw
+} from 'lucide-react';
+
+const DATASET_SHEETS = [
+  { id: 'Kinetic Bug', label: 'Kinetic Bug', file: 'Physical Exhibit.xlsx', count: '32 runs' },
+  { id: 'Kinetic Flower', label: 'Kinetic Flower', file: 'Physical Exhibit.xlsx', count: '32 runs' }
+];
+
+const DATASET_FILES = [
+  { id: 'engagement-sessions-2026-09-15.csv', label: 'engagement-sessions-2026-09-15.csv', count: '22,722 sessions' },
+  { id: 'Physical Exhibit.xlsx', label: 'Physical Exhibit.xlsx', count: '64 runs (2 sheets)' },
+  { id: 'engagement-report-2026-09-15.pdf', label: 'engagement-report-2026-09-15.pdf', count: 'Executive report' }
+];
+
+const DATASET_EXHIBITS = [
+  'Color-perception-jayanagar',
+  'Color-perception',
+  'oki-2',
+  'Rangolify',
+  'LandsatNameJayanagar',
+  'TacTile',
+  'Circle-Drawing',
+  'pace-the-clock-jaynagar',
+  'traffic-gallery-sign-game',
+  'pace-the-clock',
+  'non-euclidean',
+  'FrequencyTestKiosk',
+  'Yogic-Nature-Discovery',
+  'yoga-infinite-scroll',
+  'Ayurvedic-plant-explorer',
+  'Lilavati-ancient',
+  'scale-of-universe',
+  'CVRaman',
+  'SoundAnalyser',
+  'Kinetic Bug',
+  'Kinetic Flower'
+];
 
 export default function ResultStats({
-  results,
   meta,
-  selectedSource,
-  setSelectedSource,
+  selectedSheet = '',
+  setSelectedSheet,
+  selectedFile = '',
+  setSelectedFile,
+  selectedExhibit = '',
+  setSelectedExhibit,
+  onResetFilters,
   sortField = 'duration',
   setSortField,
   sortOrder = 'asc',
@@ -16,26 +67,18 @@ export default function ResultStats({
   setShowRawJson,
   totalResultsCount
 }) {
-  const [filterOpen, setFilterOpen] = useState(false);
-  const [sortOpen, setSortOpen] = useState(false);
-  const filterRef = useRef(null);
-  const sortRef = useRef(null);
+  const [openDropdown, setOpenDropdown] = useState(null); // 'sheet' | 'file' | 'exhibit' | 'metric' | 'order' | null
+  const containerRef = useRef(null);
 
-  // Close dropdowns on click outside or Escape
+  // Close dropdown on outside click or Escape
   useEffect(() => {
     function handleClickOutside(e) {
-      if (filterRef.current && !filterRef.current.contains(e.target)) {
-        setFilterOpen(false);
-      }
-      if (sortRef.current && !sortRef.current.contains(e.target)) {
-        setSortOpen(false);
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setOpenDropdown(null);
       }
     }
     function handleKeyDown(e) {
-      if (e.key === 'Escape') {
-        setFilterOpen(false);
-        setSortOpen(false);
-      }
+      if (e.key === 'Escape') setOpenDropdown(null);
     }
     document.addEventListener('mousedown', handleClickOutside);
     document.addEventListener('keydown', handleKeyDown);
@@ -45,261 +88,307 @@ export default function ResultStats({
     };
   }, []);
 
-  // Extract sheets and file sources
-  const sheets = [...new Set((results || []).map((r) => {
-    if (r.locator) {
-      const m = r.locator.match(/sheet:([^|]+)/i);
-      if (m) return m[1].trim();
-    }
-    return r.attributes?.sheet || null;
-  }).filter(Boolean))];
-
-  const fileSources = [...new Set((results || []).map((r) => r.source).filter(Boolean))];
-  const hasMultipleFilters = sheets.length > 0 || fileSources.length > 1;
-
-  const toggleSortOrder = () => {
-    if (setSortOrder) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-    }
+  const toggleDropdown = (name) => {
+    setOpenDropdown(prev => (prev === name ? null : name));
   };
 
-  // Human-readable active filter label
-  let filterDisplayLabel = 'All Sheets & Sources';
-  if (selectedSource) {
-    if (selectedSource.startsWith('sheet:')) {
-      filterDisplayLabel = `Sheet: ${selectedSource.replace('sheet:', '')}`;
-    } else if (selectedSource.startsWith('file:')) {
-      const fname = selectedSource.replace('file:', '');
-      filterDisplayLabel = fname.length > 24 ? `File: ${fname.slice(0, 22)}...` : `File: ${fname}`;
-    } else {
-      filterDisplayLabel = selectedSource.length > 24 ? `${selectedSource.slice(0, 22)}...` : selectedSource;
-    }
-  }
-
-  // Human-readable active sort label
-  const sortLabels = {
-    duration: 'Sort: Duration (s)',
-    presses: 'Sort: Interactions',
-    exhibit: 'Sort: Exhibit / Station'
-  };
-  const sortDisplayLabel = sortLabels[sortField] || 'Sort By';
+  const hasActiveFilters = Boolean(selectedSheet || selectedFile || selectedExhibit);
 
   return (
-    <div className="results-header-bar">
-      <div className="results-meta-left">
-        <span className="results-count">
-          <strong>{totalResultsCount}</strong> {totalResultsCount === 1 ? 'result' : 'results'}
-        </span>
-        {meta?.image_results?.length > 0 && (
-          <span className="image-count-pill">{meta.image_results.length} images</span>
-        )}
-        {meta?._cutoff_applied && (
-          <span className="cutoff-pill" title="Low-relevance items filtered out (rerank cutoff >= 0.0)">Cutoff Applied</span>
-        )}
-        {meta?._latency_ms && (
-          <span className="results-latency">({meta._latency_ms}ms)</span>
-        )}
-        {meta?.dataset && (
-          <span className="dataset-label">in <code>{meta.dataset}</code></span>
-        )}
+    <div className="results-header-container" ref={containerRef}>
+      {/* Top Meta & Action Bar */}
+      <div className="results-header-bar">
+        <div className="results-meta-left">
+          <span className="results-count">
+            <strong>{totalResultsCount}</strong> {totalResultsCount === 1 ? 'result' : 'results'}
+          </span>
+          {meta?.image_results?.length > 0 && (
+            <span className="image-count-pill">{meta.image_results.length} images</span>
+          )}
+          {meta?._cutoff_applied && (
+            <span className="cutoff-pill" title="Low-relevance items filtered out (rerank cutoff >= 0.0)">Cutoff Applied</span>
+          )}
+          {meta?._latency_ms && (
+            <span className="results-latency">({meta._latency_ms}ms)</span>
+          )}
+          {meta?.dataset && (
+            <span className="dataset-label">in <code>{meta.dataset}</code></span>
+          )}
+        </div>
+
+        <div className="results-actions-right">
+          {/* AI Answer Synthesis */}
+          <button
+            type="button"
+            className={`action-btn ${showSynthesis ? 'active' : ''}`}
+            onClick={() => setShowSynthesis(!showSynthesis)}
+          >
+            <Sparkles size={14} />
+            <span>{showSynthesis ? 'Hide Summary' : 'AI Summary'}</span>
+          </button>
+
+          {/* Raw JSON */}
+          <button
+            type="button"
+            className={`action-btn ${showRawJson ? 'active' : ''}`}
+            onClick={() => setShowRawJson(!showRawJson)}
+            title="Inspect API response JSON"
+          >
+            <Code size={14} />
+            <span>JSON</span>
+          </button>
+        </div>
       </div>
 
-      <div className="results-actions-right">
-        {/* Custom Filter Dropdown for Sheet / Source File */}
-        {hasMultipleFilters && (
-          <div className="custom-dropdown-container" ref={filterRef}>
-            <button
-              type="button"
-              className={`custom-dropdown-trigger ${filterOpen ? 'active' : ''}`}
-              onClick={() => {
-                setFilterOpen(!filterOpen);
-                setSortOpen(false);
-              }}
-              title="Filter by Sheet or Source File"
-            >
-              <Filter size={13} className="trigger-icon" />
-              <span className="trigger-label">{filterDisplayLabel}</span>
-              <ChevronDown size={13} className={`trigger-chevron ${filterOpen ? 'open' : ''}`} />
-            </button>
+      {/* Dedicated Parameter Dropdown Controls Bar */}
+      <div className="parameter-controls-bar">
+        {/* 1. Sheets Dropdown */}
+        <div className="param-dropdown-container">
+          <button
+            type="button"
+            className={`param-dropdown-btn ${openDropdown === 'sheet' ? 'active' : ''} ${selectedSheet ? 'is-filtered' : ''}`}
+            onClick={() => toggleDropdown('sheet')}
+            title="Filter by Excel Sheet"
+          >
+            <FileSpreadsheet size={13} className="param-icon text-emerald" />
+            <span className="param-label">
+              {selectedSheet ? `Sheet: ${selectedSheet}` : 'All Sheets'}
+            </span>
+            <ChevronDown size={13} className={`param-chevron ${openDropdown === 'sheet' ? 'open' : ''}`} />
+          </button>
 
-            {filterOpen && (
-              <div className="custom-dropdown-menu">
-                {/* All Sheets & Sources */}
+          {openDropdown === 'sheet' && (
+            <div className="param-floating-menu">
+              <div className="param-menu-header">EXCEL DATA SHEETS</div>
+              <button
+                type="button"
+                className={`param-menu-item ${!selectedSheet ? 'selected' : ''}`}
+                onClick={() => {
+                  setSelectedSheet && setSelectedSheet('');
+                  setOpenDropdown(null);
+                }}
+              >
+                <span>All Sheets</span>
+                {!selectedSheet && <Check size={14} className="text-emerald" />}
+              </button>
+              {DATASET_SHEETS.map(sh => (
                 <button
+                  key={sh.id}
                   type="button"
-                  className={`custom-dropdown-item ${!selectedSource ? 'selected' : ''}`}
+                  className={`param-menu-item ${selectedSheet === sh.id ? 'selected' : ''}`}
                   onClick={() => {
-                    setSelectedSource && setSelectedSource('');
-                    setFilterOpen(false);
+                    setSelectedSheet && setSelectedSheet(sh.id);
+                    setOpenDropdown(null);
                   }}
                 >
-                  <Layers size={13} className="item-icon text-indigo" />
-                  <span className="item-text font-medium">All Sheets & Sources</span>
-                  {!selectedSource && <Check size={14} className="check-icon text-emerald" />}
+                  <div className="param-item-stacked">
+                    <span className="param-item-title font-semibold">{sh.label}</span>
+                    <span className="param-item-sub text-muted font-mono">{sh.file} · {sh.count}</span>
+                  </div>
+                  {selectedSheet === sh.id && <Check size={14} className="text-emerald" />}
                 </button>
+              ))}
+            </div>
+          )}
+        </div>
 
-                {/* Excel Sheets Section */}
-                {sheets.length > 0 && (
-                  <div className="dropdown-section">
-                    <div className="dropdown-section-title">
-                      <FileSpreadsheet size={12} className="text-emerald" />
-                      <span>EXCEL SHEETS</span>
-                    </div>
-                    {sheets.map((sh) => {
-                      const val = `sheet:${sh}`;
-                      const isSel = selectedSource === val;
-                      return (
-                        <button
-                          key={val}
-                          type="button"
-                          className={`custom-dropdown-item ${isSel ? 'selected' : ''}`}
-                          onClick={() => {
-                            setSelectedSource && setSelectedSource(val);
-                            setFilterOpen(false);
-                          }}
-                        >
-                          <span className="item-bullet">•</span>
-                          <span className="item-text">Sheet: {sh}</span>
-                          {isSel && <Check size={14} className="check-icon text-emerald" />}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
+        {/* 2. Files Dropdown */}
+        <div className="param-dropdown-container">
+          <button
+            type="button"
+            className={`param-dropdown-btn ${openDropdown === 'file' ? 'active' : ''} ${selectedFile ? 'is-filtered' : ''}`}
+            onClick={() => toggleDropdown('file')}
+            title="Filter by Source File"
+          >
+            <FileText size={13} className="param-icon text-amber" />
+            <span className="param-label">
+              {selectedFile ? (selectedFile.length > 20 ? `${selectedFile.slice(0, 18)}...` : selectedFile) : 'All Files'}
+            </span>
+            <ChevronDown size={13} className={`param-chevron ${openDropdown === 'file' ? 'open' : ''}`} />
+          </button>
 
-                {/* Source Files Section */}
-                {fileSources.length > 0 && (
-                  <div className="dropdown-section">
-                    <div className="dropdown-section-title">
-                      <FileText size={12} className="text-amber" />
-                      <span>SOURCE FILES</span>
-                    </div>
-                    {fileSources.map((src) => {
-                      const val = `file:${src}`;
-                      const isSel = selectedSource === val;
-                      return (
-                        <button
-                          key={val}
-                          type="button"
-                          className={`custom-dropdown-item ${isSel ? 'selected' : ''}`}
-                          onClick={() => {
-                            setSelectedSource && setSelectedSource(val);
-                            setFilterOpen(false);
-                          }}
-                        >
-                          <span className="item-bullet">•</span>
-                          <span className="item-text font-mono text-xs">{src}</span>
-                          {isSel && <Check size={14} className="check-icon text-emerald" />}
-                        </button>
-                      );
-                    })}
+          {openDropdown === 'file' && (
+            <div className="param-floating-menu">
+              <div className="param-menu-header">DATASET SOURCE FILES</div>
+              <button
+                type="button"
+                className={`param-menu-item ${!selectedFile ? 'selected' : ''}`}
+                onClick={() => {
+                  setSelectedFile && setSelectedFile('');
+                  setOpenDropdown(null);
+                }}
+              >
+                <span>All Files</span>
+                {!selectedFile && <Check size={14} className="text-emerald" />}
+              </button>
+              {DATASET_FILES.map(f => (
+                <button
+                  key={f.id}
+                  type="button"
+                  className={`param-menu-item ${selectedFile === f.id ? 'selected' : ''}`}
+                  onClick={() => {
+                    setSelectedFile && setSelectedFile(f.id);
+                    setOpenDropdown(null);
+                  }}
+                >
+                  <div className="param-item-stacked">
+                    <span className="param-item-title font-mono text-xs">{f.label}</span>
+                    <span className="param-item-sub text-muted">{f.count}</span>
                   </div>
-                )}
+                  {selectedFile === f.id && <Check size={14} className="text-emerald" />}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 3. Exhibits / Stations Dropdown */}
+        <div className="param-dropdown-container">
+          <button
+            type="button"
+            className={`param-dropdown-btn ${openDropdown === 'exhibit' ? 'active' : ''} ${selectedExhibit ? 'is-filtered' : ''}`}
+            onClick={() => toggleDropdown('exhibit')}
+            title="Filter by Exhibit Station"
+          >
+            <Landmark size={13} className="param-icon text-indigo" />
+            <span className="param-label">
+              {selectedExhibit ? `Exhibit: ${selectedExhibit}` : 'All Exhibits'}
+            </span>
+            <ChevronDown size={13} className={`param-chevron ${openDropdown === 'exhibit' ? 'open' : ''}`} />
+          </button>
+
+          {openDropdown === 'exhibit' && (
+            <div className="param-floating-menu scrollable-menu">
+              <div className="param-menu-header">25 TOUCH EXHIBIT STATIONS</div>
+              <button
+                type="button"
+                className={`param-menu-item ${!selectedExhibit ? 'selected' : ''}`}
+                onClick={() => {
+                  setSelectedExhibit && setSelectedExhibit('');
+                  setOpenDropdown(null);
+                }}
+              >
+                <span>All Exhibits</span>
+                {!selectedExhibit && <Check size={14} className="text-emerald" />}
+              </button>
+              {DATASET_EXHIBITS.map(ex => (
+                <button
+                  key={ex}
+                  type="button"
+                  className={`param-menu-item ${selectedExhibit === ex ? 'selected' : ''}`}
+                  onClick={() => {
+                    setSelectedExhibit && setSelectedExhibit(ex);
+                    setOpenDropdown(null);
+                  }}
+                >
+                  <span>{ex}</span>
+                  {selectedExhibit === ex && <Check size={14} className="text-emerald" />}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 4. Metric / Parameter Dropdown */}
+        {setSortField && (
+          <div className="param-dropdown-container">
+            <button
+              type="button"
+              className={`param-dropdown-btn ${openDropdown === 'metric' ? 'active' : ''}`}
+              onClick={() => toggleDropdown('metric')}
+              title="Select parameter to evaluate"
+            >
+              <ArrowUpDown size={13} className="param-icon text-purple" />
+              <span className="param-label">
+                {sortField === 'duration' ? 'Metric: Duration (s)' : (sortField === 'presses' ? 'Metric: Interactions' : 'Metric: Station')}
+              </span>
+              <ChevronDown size={13} className={`param-chevron ${openDropdown === 'metric' ? 'open' : ''}`} />
+            </button>
+
+            {openDropdown === 'metric' && (
+              <div className="param-floating-menu">
+                <div className="param-menu-header">EVALUATION METRIC</div>
+                <button
+                  type="button"
+                  className={`param-menu-item ${sortField === 'duration' ? 'selected' : ''}`}
+                  onClick={() => {
+                    setSortField('duration');
+                    setOpenDropdown(null);
+                  }}
+                >
+                  <div className="param-item-stacked">
+                    <span className="param-item-title font-semibold">Dwell Duration / Seconds</span>
+                    <span className="param-item-sub text-muted">Stay time per visitor run</span>
+                  </div>
+                  {sortField === 'duration' && <Check size={14} className="text-emerald" />}
+                </button>
+                <button
+                  type="button"
+                  className={`param-menu-item ${sortField === 'presses' ? 'selected' : ''}`}
+                  onClick={() => {
+                    setSortField('presses');
+                    setOpenDropdown(null);
+                  }}
+                >
+                  <div className="param-item-stacked">
+                    <span className="param-item-title font-semibold">Visitor Interactions / Presses</span>
+                    <span className="param-item-sub text-muted">Button touches and clicks</span>
+                  </div>
+                  {sortField === 'presses' && <Check size={14} className="text-emerald" />}
+                </button>
+                <button
+                  type="button"
+                  className={`param-menu-item ${sortField === 'exhibit' ? 'selected' : ''}`}
+                  onClick={() => {
+                    setSortField('exhibit');
+                    setOpenDropdown(null);
+                  }}
+                >
+                  <div className="param-item-stacked">
+                    <span className="param-item-title font-semibold">Exhibit Station Name</span>
+                    <span className="param-item-sub text-muted">Alphabetical order</span>
+                  </div>
+                  {sortField === 'exhibit' && <Check size={14} className="text-emerald" />}
+                </button>
               </div>
             )}
           </div>
         )}
 
-        {/* Custom Sorting Controls */}
-        {setSortField && (
-          <div className="sort-controls-wrapper">
-            <div className="custom-dropdown-container" ref={sortRef}>
-              <button
-                type="button"
-                className={`custom-dropdown-trigger sort-trigger ${sortOpen ? 'active' : ''}`}
-                onClick={() => {
-                  setSortOpen(!sortOpen);
-                  setFilterOpen(false);
-                }}
-                title="Select field to sort by"
-              >
-                <ArrowUpDown size={13} className="trigger-icon" />
-                <span className="trigger-label">{sortDisplayLabel}</span>
-                <ChevronDown size={13} className={`trigger-chevron ${sortOpen ? 'open' : ''}`} />
-              </button>
-
-              {sortOpen && (
-                <div className="custom-dropdown-menu sort-dropdown-menu">
-                  <button
-                    type="button"
-                    className={`custom-dropdown-item ${sortField === 'duration' ? 'selected' : ''}`}
-                    onClick={() => {
-                      setSortField('duration');
-                      setSortOpen(false);
-                    }}
-                  >
-                    <span className="item-text">Sort: Duration (s)</span>
-                    {sortField === 'duration' && <Check size={14} className="check-icon text-emerald" />}
-                  </button>
-
-                  <button
-                    type="button"
-                    className={`custom-dropdown-item ${sortField === 'presses' ? 'selected' : ''}`}
-                    onClick={() => {
-                      setSortField('presses');
-                      setSortOpen(false);
-                    }}
-                  >
-                    <span className="item-text">Sort: Interactions / Presses</span>
-                    {sortField === 'presses' && <Check size={14} className="check-icon text-emerald" />}
-                  </button>
-
-                  <button
-                    type="button"
-                    className={`custom-dropdown-item ${sortField === 'exhibit' ? 'selected' : ''}`}
-                    onClick={() => {
-                      setSortField('exhibit');
-                      setSortOpen(false);
-                    }}
-                  >
-                    <span className="item-text">Sort: Exhibit / Station</span>
-                    {sortField === 'exhibit' && <Check size={14} className="check-icon text-emerald" />}
-                  </button>
-                </div>
-              )}
-            </div>
-
-            <button
-              type="button"
-              className={`sort-order-btn ${sortOrder === 'asc' ? 'asc-active' : 'desc-active'}`}
-              onClick={toggleSortOrder}
-              title={`Switch to ${sortOrder === 'asc' ? 'Descending (Highest first)' : 'Ascending (Lowest first)'}`}
-            >
-              {sortOrder === 'asc' ? (
-                <>
-                  <ArrowUp size={13} className="text-emerald" />
-                  <span>Ascending (Min at top)</span>
-                </>
-              ) : (
-                <>
-                  <ArrowDown size={13} className="text-indigo" />
-                  <span>Descending (Max at top)</span>
-                </>
-              )}
-            </button>
-          </div>
+        {/* 5. Order: Ascending / Descending Toggle Button */}
+        {setSortOrder && (
+          <button
+            type="button"
+            className={`param-order-toggle-btn ${sortOrder === 'asc' ? 'asc-mode' : 'desc-mode'}`}
+            onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+            title={`Current order: ${sortOrder === 'asc' ? 'Ascending (Minimum at top)' : 'Descending (Maximum at top)'}. Click to switch.`}
+          >
+            {sortOrder === 'asc' ? (
+              <>
+                <ArrowUp size={13} className="text-emerald" />
+                <span>Ascending (Min at top)</span>
+              </>
+            ) : (
+              <>
+                <ArrowDown size={13} className="text-indigo" />
+                <span>Descending (Max at top)</span>
+              </>
+            )}
+          </button>
         )}
 
-        {/* AI Answer Synthesis */}
-        <button
-          type="button"
-          className={`action-btn ${showSynthesis ? 'active' : ''}`}
-          onClick={() => setShowSynthesis(!showSynthesis)}
-        >
-          <Sparkles size={14} />
-          <span>{showSynthesis ? 'Hide Summary' : 'AI Summary'}</span>
-        </button>
-
-        {/* Raw JSON */}
-        <button
-          type="button"
-          className={`action-btn ${showRawJson ? 'active' : ''}`}
-          onClick={() => setShowRawJson(!showRawJson)}
-          title="Inspect API response JSON"
-        >
-          <Code size={14} />
-          <span>JSON</span>
-        </button>
+        {/* Reset Filter Button */}
+        {hasActiveFilters && (
+          <button
+            type="button"
+            className="param-reset-btn"
+            onClick={onResetFilters}
+            title="Clear all active sheet, file, and exhibit filters"
+          >
+            <RotateCcw size={12} />
+            <span>Reset Filters</span>
+          </button>
+        )}
       </div>
     </div>
   );
