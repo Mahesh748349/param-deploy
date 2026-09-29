@@ -539,6 +539,59 @@
   font-size: 0.75rem;
   outline: none;
   cursor: pointer;
+  color-scheme: dark;
+}
+
+/* Global Select & Option Dropdown Visibility in Dark & Light Modes */
+select {
+  color-scheme: dark;
+}
+
+[data-theme="light"] select,
+[data-theme="light"] .filter-select {
+  color-scheme: light;
+}
+
+select option,
+select optgroup,
+.filter-select option,
+.filter-select optgroup {
+  background-color: #0f172a !important;
+  color: #f1f5f9 !important;
+  padding: 6px 10px !important;
+  font-family: inherit;
+  font-size: 0.8rem;
+}
+
+select optgroup,
+.filter-select optgroup {
+  font-weight: 700 !important;
+  color: #818cf8 !important;
+  background-color: #1e293b !important;
+  padding: 8px 10px 4px 10px !important;
+}
+
+select option:checked,
+select option:hover,
+.filter-select option:checked,
+.filter-select option:hover {
+  background-color: #2563eb !important;
+  color: #ffffff !important;
+}
+
+/* Light mode overrides */
+[data-theme="light"] select option,
+[data-theme="light"] select optgroup,
+[data-theme="light"] .filter-select option,
+[data-theme="light"] .filter-select optgroup {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+
+[data-theme="light"] select optgroup,
+[data-theme="light"] .filter-select optgroup {
+  color: #4f46e5 !important;
+  background-color: #f1f5f9 !important;
 }
 
 .action-btn {
