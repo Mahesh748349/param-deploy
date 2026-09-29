@@ -471,6 +471,32 @@ const DATASET_METRICS = {
       avg_dwell_display: "1m 3s",
       avg_dwell_seconds: 63.0
     }
+  },
+  sheets: {
+    "kinetic bug": {
+      name: "Kinetic Bug",
+      file: "Physical Exhibit.xlsx",
+      total_runs: 32,
+      min_dwell_seconds: 0.12,
+      max_dwell_seconds: 62.01,
+      avg_dwell_seconds: 6.709,
+      min_dwell_display: "0.12s",
+      max_dwell_display: "62.01s",
+      avg_dwell_display: "6.71s",
+      unit: "seconds"
+    },
+    "kinetic flower": {
+      name: "Kinetic Flower",
+      file: "Physical Exhibit.xlsx",
+      total_runs: 32,
+      min_dwell_seconds: 0.3,
+      max_dwell_seconds: 50.385,
+      avg_dwell_seconds: 6.751,
+      min_dwell_display: "0.30s",
+      max_dwell_display: "50.39s",
+      avg_dwell_display: "6.75s",
+      unit: "seconds"
+    }
   }
 };
 
@@ -479,9 +505,19 @@ const DATASET_METRICS = {
  * Combines authentic whole-dataset benchmarks (22,722 sessions) with retrieved candidate metrics.
  */
 function calculateTelemetryMetrics(cleanQuery, text_results) {
-  // Check if query targets a specific exhibit
-  let matchedExhibit = null;
   const qLower = (cleanQuery || '').toLowerCase();
+
+  // 1. Check if query targets a specific sheet
+  let matchedSheet = null;
+  for (const [key, sData] of Object.entries(DATASET_METRICS.sheets)) {
+    if (qLower.includes(key) || qLower.includes(sData.name.toLowerCase())) {
+      matchedSheet = sData;
+      break;
+    }
+  }
+
+  // 2. Check if query targets a specific exhibit
+  let matchedExhibit = null;
   for (const [key, exData] of Object.entries(DATASET_METRICS.exhibits)) {
     if (qLower.includes(key.toLowerCase()) || qLower.includes(exData.display_name.toLowerCase())) {
       matchedExhibit = exData;
@@ -499,9 +535,21 @@ function calculateTelemetryMetrics(cleanQuery, text_results) {
       let presses = null;
       let exhibit = attrs.display_name || attrs.exhibit_id || attrs.station || null;
 
-      // 1. Check attribute fields for any duration or dwell metrics
+      // Extract sheet name if present in locator or attributes
+      let sheet = null;
+      if (r.locator) {
+        const sm = r.locator.match(/sheet:([^|]+)/i);
+        if (sm) sheet = sm[1].trim();
+      }
+      if (!sheet && attrs.sheet) sheet = attrs.sheet;
+
+      if (!exhibit && sheet) {
+        exhibit = sheet;
+      }
+
+      // Check attribute fields for any duration, dwell, or total seconds metrics
       for (const [key, val] of Object.entries(attrs)) {
-        if (/duration|dwell|stay_time|session.*min|time_s/i.test(key)) {
+        if (/duration|dwell|stay_time|session.*min|time_s|total\s*seconds|seconds/i.test(key)) {
           const num = parseFloat(val);
           if (!isNaN(num)) {
             if (key.includes('_min')) {
@@ -516,7 +564,7 @@ function calculateTelemetryMetrics(cleanQuery, text_results) {
         }
       }
 
-      // 2. Check attribute fields for button presses or interactions
+      // Check attribute fields for button presses or interactions
       for (const [key, val] of Object.entries(attrs)) {
         if (/press|interaction|disappearance|count|adjustment|saccade/i.test(key)) {
           const num = parseInt(val, 10);
@@ -527,9 +575,11 @@ function calculateTelemetryMetrics(cleanQuery, text_results) {
         }
       }
 
-      // 3. Fallback regex on text
+      // Fallback regex on text (including Total Seconds in Physical Exhibit.xlsx)
       if (duration === null && text) {
-        const m = text.match(/"duration_s"\s*:\s*([\d.]+)/i) || 
+        const m = text.match(/"Total Seconds"\s*:\s*([\d.]+)/i) ||
+                  text.match(/Total\s*Seconds[:\s]+([\d.]+)/i) ||
+                  text.match(/"duration_s"\s*:\s*([\d.]+)/i) || 
                   text.match(/duration[:\s]+([\d.]+)\s*s?/i) || 
                   text.match(/([\d.]+)\s*seconds/i);
         if (m && !isNaN(parseFloat(m[1]))) {
@@ -555,6 +605,7 @@ function calculateTelemetryMetrics(cleanQuery, text_results) {
       if (duration !== null || presses !== null) {
         dataPoints.push({
           exhibit: exhibit || r.source || 'Exhibit Station',
+          sheet: sheet || null,
           duration,
           durationOriginal: durationOriginal || (duration !== null ? `${duration}s` : null),
           presses,
@@ -564,17 +615,52 @@ function calculateTelemetryMetrics(cleanQuery, text_results) {
     }
   }
 
+  // If matchedSheet wasn't in query, check if all or most results belong to one sheet
+  if (!matchedSheet && dataPoints.length > 0) {
+    const sheetCounts = {};
+    for (const d of dataPoints) {
+      if (d.sheet) {
+        const sKey = d.sheet.toLowerCase();
+        sheetCounts[sKey] = (sheetCounts[sKey] || 0) + 1;
+      }
+    }
+    for (const [sKey, sData] of Object.entries(DATASET_METRICS.sheets)) {
+      if (sheetCounts[sKey] && sheetCounts[sKey] >= (dataPoints.length / 2)) {
+        matchedSheet = sData;
+        break;
+      }
+    }
+  }
+
   const validDurations = dataPoints.filter(d => typeof d.duration === 'number' && !isNaN(d.duration));
   const validPresses = dataPoints.filter(d => typeof d.presses === 'number' && !isNaN(d.presses));
 
-  const durValues = validDurations.map(d => d.duration);
-  const minDur = durValues.length > 0 ? Math.min(...durValues) : DATASET_METRICS.whole_dataset.min_dwell_seconds;
-  const maxDur = durValues.length > 0 ? Math.max(...durValues) : DATASET_METRICS.whole_dataset.max_dwell_seconds;
-  const sumDur = durValues.reduce((a, b) => a + b, 0);
-  const avgDur = durValues.length > 0 ? sumDur / durValues.length : DATASET_METRICS.whole_dataset.avg_dwell_seconds;
+  // If a sheet is matched, calculate dynamically from those sheet records
+  const sheetFilteredDurations = matchedSheet
+    ? validDurations.filter(d => (d.sheet || '').toLowerCase() === matchedSheet.name.toLowerCase() || (d.exhibit || '').toLowerCase() === matchedSheet.name.toLowerCase())
+    : [];
 
-  const minItem = validDurations.find(d => d.duration === minDur);
-  const maxItem = validDurations.find(d => d.duration === maxDur);
+  const targetDurations = sheetFilteredDurations.length > 0 ? sheetFilteredDurations : validDurations;
+  const durValues = targetDurations.map(d => d.duration);
+
+  let minDur, maxDur, avgDur;
+  if (matchedSheet && durValues.length === 0) {
+    minDur = matchedSheet.min_dwell_seconds;
+    maxDur = matchedSheet.max_dwell_seconds;
+    avgDur = matchedSheet.avg_dwell_seconds;
+  } else if (durValues.length > 0) {
+    minDur = Math.min(...durValues);
+    maxDur = Math.max(...durValues);
+    const sumDur = durValues.reduce((a, b) => a + b, 0);
+    avgDur = sumDur / durValues.length;
+  } else {
+    minDur = DATASET_METRICS.whole_dataset.min_dwell_seconds;
+    maxDur = DATASET_METRICS.whole_dataset.max_dwell_seconds;
+    avgDur = DATASET_METRICS.whole_dataset.avg_dwell_seconds;
+  }
+
+  const minItem = targetDurations.find(d => d.duration === minDur);
+  const maxItem = targetDurations.find(d => d.duration === maxDur);
 
   const pressValues = validPresses.map(d => d.presses);
   const minPress = pressValues.length > 0 ? Math.min(...pressValues) : DATASET_METRICS.whole_dataset.min_interactions;
@@ -584,16 +670,17 @@ function calculateTelemetryMetrics(cleanQuery, text_results) {
 
   return {
     is_analytical: true,
+    matched_sheet: matchedSheet,
     matched_exhibit: matchedExhibit,
     whole_dataset: DATASET_METRICS.whole_dataset,
+    available_sheets: DATASET_METRICS.sheets,
     sample_records: {
-      count: validDurations.length,
+      count: targetDurations.length,
       min_dwell: minDur,
-      min_dwell_exhibit: minItem?.exhibit || DATASET_METRICS.whole_dataset.min_dwell_exhibit,
+      min_dwell_exhibit: minItem?.exhibit || (matchedSheet ? matchedSheet.name : DATASET_METRICS.whole_dataset.min_dwell_exhibit),
       max_dwell: maxDur,
-      max_dwell_exhibit: maxItem?.exhibit || DATASET_METRICS.whole_dataset.max_dwell_exhibit,
+      max_dwell_exhibit: maxItem?.exhibit || (matchedSheet ? matchedSheet.name : DATASET_METRICS.whole_dataset.max_dwell_exhibit),
       avg_dwell: avgDur,
-      sum_dwell: sumDur,
       min_interactions: minPress,
       max_interactions: maxPress,
       avg_interactions: avgPress
@@ -616,15 +703,26 @@ app.post('/api/synthesize', requireAuthorizedTeamEmail, async (req, res) => {
 
   // If analytical/calculation query, provide concise acknowledgement pointing to dedicated metrics card
   const isAnalyticalQuery = /\b(minimum|maximum|average|highest|lowest|min|max|avg|sum|total|median|busiest)\b/i.test(cleanQuery);
-  const isInteractionQuery = /interaction|press|count|button|touch|click/i.test(cleanQuery);
+  const isInteractionQuery = /interaction|press|count|button|touch|click/i.test(cleanQuery) && !/dwell|duration|stay|seconds/i.test(cleanQuery);
 
   if (isAnalyticalQuery) {
     const analytics = calculateTelemetryMetrics(cleanQuery, text_results);
-    const avgDisplay = analytics.matched_exhibit ? analytics.matched_exhibit.avg_dwell_display : analytics.whole_dataset.avg_dwell_display;
-    const exhibitName = analytics.matched_exhibit ? analytics.matched_exhibit.display_name : "all 25 touch exhibits";
-
     let summaryText = '';
-    if (isInteractionQuery) {
+
+    // If query specifies or targets a sheet (e.g. Kinetic Bug, Kinetic Flower)
+    if (analytics.matched_sheet) {
+      const s = analytics.matched_sheet;
+      const dynMin = analytics.sample_records?.min_dwell !== undefined ? analytics.sample_records.min_dwell : s.min_dwell_seconds;
+      const dynMax = analytics.sample_records?.max_dwell !== undefined ? analytics.sample_records.max_dwell : s.max_dwell_seconds;
+      const dynAvg = analytics.sample_records?.avg_dwell !== undefined ? analytics.sample_records.avg_dwell : s.avg_dwell_seconds;
+
+      summaryText = `### **${s.name} Sheet Telemetry Analysis** (${s.file})\n\n` +
+        `• **Minimum Engagement Time**: **${dynMin}s** (Lowest recorded run in ${s.name})\n` +
+        `• **Maximum Engagement Time**: **${dynMax}s** (Peak recorded run in ${s.name})\n` +
+        `• **Average Engagement Time**: **${typeof dynAvg === 'number' ? dynAvg.toFixed(2) : dynAvg}s** (${s.avg_dwell_display})\n` +
+        `• **Total Runs in Sheet**: **${s.total_runs} authentic records**\n\n` +
+        `*Individual records from the **${s.name}** sheet are extracted in the telemetry table below. You can sort them in **Ascending (↑ Lowest First)** or **Descending (↓ Highest First)** order.*`;
+    } else if (isInteractionQuery) {
       summaryText = `### **Visitor Interactions Analysis**\n\n` +
         `• **Minimum Interactions (Single Session)**: **1 press** (recorded in granular session data)\n` +
         `• **Least Interacted Exhibit (Museum-Wide)**: **${analytics.whole_dataset.least_interacted_exhibit}**\n` +
@@ -633,6 +731,9 @@ app.post('/api/synthesize', requireAuthorizedTeamEmail, async (req, res) => {
         `• **Total Museum Interactions**: **${analytics.whole_dataset.total_interactions.toLocaleString()} interactions** across 25 exhibits.\n\n` +
         `*Interactive cards and telemetry session records are displayed in the dedicated panel below.*`;
     } else {
+      const avgDisplay = analytics.matched_exhibit ? analytics.matched_exhibit.avg_dwell_display : analytics.whole_dataset.avg_dwell_display;
+      const exhibitName = analytics.matched_exhibit ? analytics.matched_exhibit.display_name : "all 25 touch exhibits";
+
       summaryText = `### **Dwell Duration Analysis**\n\n` +
         `• **Dataset Average Dwell Time**: **${avgDisplay}** (evaluated across ${exhibitName}, representing ${analytics.whole_dataset.total_sessions.toLocaleString()} visitor sessions).\n` +
         `• **Session Dwell Extremes**: Minimum **${analytics.whole_dataset.min_dwell_seconds}s**, Maximum **${analytics.whole_dataset.max_dwell_display}** (${analytics.whole_dataset.max_dwell_seconds}s).\n` +

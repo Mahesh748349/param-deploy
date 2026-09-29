@@ -35,6 +35,8 @@ export default function App() {
   const [notice, setNotice] = useState(null);
   const [health, setHealth] = useState(null);
   const [selectedSource, setSelectedSource] = useState('');
+  const [sortField, setSortField] = useState('duration');
+  const [sortOrder, setSortOrder] = useState('asc');
   const [showSynthesis, setShowSynthesis] = useState(false);
   const [showRawJson, setShowRawJson] = useState(false);
   
@@ -165,9 +167,20 @@ export default function App() {
     }
   };
 
-  const filteredResults = selectedSource
-    ? results.filter((r) => r.source === selectedSource)
-    : results;
+  const filteredResults = (results || []).filter((r) => {
+    if (!selectedSource) return true;
+    if (selectedSource.startsWith('sheet:')) {
+      const targetSheet = selectedSource.replace('sheet:', '').trim().toLowerCase();
+      const locatorSheet = r.locator ? (r.locator.match(/sheet:([^|]+)/i)?.[1] || '').trim().toLowerCase() : '';
+      const attrSheet = (r.attributes?.sheet || '').trim().toLowerCase();
+      return locatorSheet === targetSheet || attrSheet === targetSheet;
+    }
+    if (selectedSource.startsWith('file:')) {
+      const targetFile = selectedSource.replace('file:', '').trim();
+      return r.source === targetFile;
+    }
+    return r.source === selectedSource;
+  });
 
   const dataRows = (filteredResults || []).map((r, idx) => {
     const attrs = r.attributes || {};
@@ -176,9 +189,21 @@ export default function App() {
     let presses = null;
     let exhibit = attrs.display_name || attrs.exhibit_id || attrs.station || null;
 
-    // 1. Check attribute fields for any duration or dwell metrics
+    // Detect sheet name from locator or attributes
+    let sheetName = null;
+    if (r.locator) {
+      const sm = r.locator.match(/sheet:([^|]+)/i);
+      if (sm) sheetName = sm[1].trim();
+    }
+    if (!sheetName && attrs.sheet) sheetName = attrs.sheet;
+
+    if (!exhibit && sheetName) {
+      exhibit = sheetName;
+    }
+
+    // 1. Check attribute fields for any duration, dwell, or total seconds metrics
     for (const [key, val] of Object.entries(attrs)) {
-      if (/duration|dwell|stay_time|session.*min|time_s/i.test(key)) {
+      if (/duration|dwell|stay_time|session.*min|time_s|total\s*seconds|seconds/i.test(key)) {
         const num = parseFloat(val);
         if (!isNaN(num)) {
           if (key.includes('_min')) {
@@ -204,9 +229,11 @@ export default function App() {
       }
     }
 
-    // 3. Fallback regex on text
+    // 3. Fallback regex on text (including Total Seconds in Physical Exhibit.xlsx)
     if (durationDisplay === null && r.text) {
-      const m = r.text.match(/"duration_s"\s*:\s*([\d.]+)/i) ||
+      const m = r.text.match(/"Total Seconds"\s*:\s*([\d.]+)/i) ||
+                r.text.match(/Total\s*Seconds[:\s]+([\d.]+)/i) ||
+                r.text.match(/"duration_s"\s*:\s*([\d.]+)/i) ||
                 r.text.match(/duration[:\s]+([\d.]+)\s*s?/i) ||
                 r.text.match(/([\d.]+)\s*seconds/i);
       if (m && !isNaN(parseFloat(m[1]))) {
@@ -227,16 +254,51 @@ export default function App() {
       if (m) exhibit = m[1].trim();
     }
 
+    const pressesNum = presses ? parseInt(presses, 10) : null;
+
     return {
       id: r.id || idx,
       exhibit: exhibit || (r.source ? r.source.replace(/\.[^.]+$/, '') : `Record #${idx + 1}`),
+      sheet: sheetName || null,
       duration: durationDisplay || (duration !== null ? `${duration}s` : '—'),
       durationNum: duration,
       presses: presses || '—',
-      timestamp: attrs.started_at ? attrs.started_at.replace('T', ' ').slice(0, 19) + ' UTC' : (attrs.recorded_at ? attrs.recorded_at.replace('T', ' ').slice(0, 19) + ' UTC' : '—'),
-      source: r.source || 'Dataset'
+      pressesNum: !isNaN(pressesNum) ? pressesNum : null,
+      timestamp: attrs.Date ? `${attrs.Date} ${attrs['Start Time'] || ''}`.trim() : (attrs.started_at ? attrs.started_at.replace('T', ' ').slice(0, 19) + ' UTC' : (attrs.recorded_at ? attrs.recorded_at.replace('T', ' ').slice(0, 19) + ' UTC' : '—')),
+      source: sheetName ? `${sheetName} (${r.source || 'Dataset'})` : (r.source || 'Dataset')
     };
   });
+
+  // Sort rows based on sortField and sortOrder (Ascending = Min at top, Descending = Max at top)
+  const sortedDataRows = [...dataRows].sort((a, b) => {
+    if (sortField === 'duration') {
+      const valA = a.durationNum !== null && !isNaN(a.durationNum) ? a.durationNum : (sortOrder === 'asc' ? Infinity : -Infinity);
+      const valB = b.durationNum !== null && !isNaN(b.durationNum) ? b.durationNum : (sortOrder === 'asc' ? Infinity : -Infinity);
+      return sortOrder === 'asc' ? valA - valB : valB - valA;
+    }
+    if (sortField === 'presses') {
+      const valA = a.pressesNum !== null && !isNaN(a.pressesNum) ? a.pressesNum : (sortOrder === 'asc' ? Infinity : -Infinity);
+      const valB = b.pressesNum !== null && !isNaN(b.pressesNum) ? b.pressesNum : (sortOrder === 'asc' ? Infinity : -Infinity);
+      return sortOrder === 'asc' ? valA - valB : valB - valA;
+    }
+    if (sortField === 'exhibit') {
+      const valA = (a.exhibit || '').toLowerCase();
+      const valB = (b.exhibit || '').toLowerCase();
+      if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
+      if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
+      return 0;
+    }
+    return 0;
+  });
+
+  const handleHeaderSort = (field) => {
+    if (sortField === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortOrder('asc');
+    }
+  };
 
   return (
     <div className="app-container">
@@ -331,6 +393,10 @@ export default function App() {
               meta={meta}
               selectedSource={selectedSource}
               setSelectedSource={setSelectedSource}
+              sortField={sortField}
+              setSortField={setSortField}
+              sortOrder={sortOrder}
+              setSortOrder={setSortOrder}
               showSynthesis={showSynthesis}
               setShowSynthesis={setShowSynthesis}
               showRawJson={showRawJson}
@@ -343,20 +409,22 @@ export default function App() {
               <AnalyticsMetricsCard
                 analytics={meta?._dataset_analytics}
                 query={query}
-                dataRows={dataRows}
+                dataRows={sortedDataRows}
               />
             )}
 
             {/* Extracted Telemetry Data Table - Shown directly for question and analytical queries */}
-            {isAnalyticalMode && dataRows.length > 0 && (
+            {isAnalyticalMode && sortedDataRows.length > 0 && (
               <div className="telemetry-table-card">
                 <div className="telemetry-table-header">
                   <div className="telemetry-table-title-group">
                     <Database size={16} className="text-indigo" />
                     <h3 className="telemetry-table-title">Exhibit Telemetry Session Records</h3>
-                    <span className="telemetry-count-badge">Sample View ({dataRows.length} Rows from 22,722 Dataset)</span>
+                    <span className="telemetry-count-badge">
+                      Sorted: {sortOrder === 'asc' ? '↑ Ascending (Min at top)' : '↓ Descending (Max at top)'} ({sortedDataRows.length} Rows)
+                    </span>
                   </div>
-                  <span className="telemetry-table-sub">Individual visitor sessions from the 22,722-session archive</span>
+                  <span className="telemetry-table-sub">Click column headers or use controls above to sort</span>
                 </div>
 
                 <div className="table-responsive">
@@ -364,15 +432,21 @@ export default function App() {
                     <thead>
                       <tr>
                         <th>#</th>
-                        <th>Exhibit Station</th>
-                        <th>Dwell Duration</th>
-                        <th>Interactions</th>
-                        <th>Timestamp (UTC)</th>
-                        <th>Dataset File</th>
+                        <th onClick={() => handleHeaderSort('exhibit')} className="sortable-th" title="Click to sort by Exhibit/Station">
+                          Exhibit / Sheet Station {sortField === 'exhibit' && (sortOrder === 'asc' ? '↑' : '↓')}
+                        </th>
+                        <th onClick={() => handleHeaderSort('duration')} className="sortable-th" title="Click to sort by Duration">
+                          Dwell Duration / Seconds {sortField === 'duration' && (sortOrder === 'asc' ? '↑ (Min)' : '↓ (Max)')}
+                        </th>
+                        <th onClick={() => handleHeaderSort('presses')} className="sortable-th" title="Click to sort by Interactions">
+                          Interactions / Presses {sortField === 'presses' && (sortOrder === 'asc' ? '↑ (Min)' : '↓ (Max)')}
+                        </th>
+                        <th>Timestamp</th>
+                        <th>Dataset File / Sheet</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {dataRows.map((row, idx) => (
+                      {sortedDataRows.map((row, idx) => (
                         <tr key={row.id || idx}>
                           <td className="font-mono text-muted">#{idx + 1}</td>
                           <td className="font-semibold text-primary">{row.exhibit}</td>

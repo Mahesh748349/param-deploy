@@ -1,18 +1,38 @@
 import React from 'react';
-import { Sparkles, Code, Filter } from 'lucide-react';
+import { Sparkles, Code, Filter, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 
 export default function ResultStats({
   results,
   meta,
   selectedSource,
   setSelectedSource,
+  sortField = 'duration',
+  setSortField,
+  sortOrder = 'asc',
+  setSortOrder,
   showSynthesis,
   setShowSynthesis,
   showRawJson,
   setShowRawJson,
   totalResultsCount
 }) {
-  const sources = [...new Set((results || []).map((r) => r.source).filter(Boolean))];
+  // Extract sheets and file sources
+  const sheets = [...new Set((results || []).map((r) => {
+    if (r.locator) {
+      const m = r.locator.match(/sheet:([^|]+)/i);
+      if (m) return m[1].trim();
+    }
+    return r.attributes?.sheet || null;
+  }).filter(Boolean))];
+
+  const fileSources = [...new Set((results || []).map((r) => r.source).filter(Boolean))];
+  const hasMultipleFilters = sheets.length > 0 || fileSources.length > 1;
+
+  const toggleSortOrder = () => {
+    if (setSortOrder) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    }
+  };
 
   return (
     <div className="results-header-bar">
@@ -35,20 +55,72 @@ export default function ResultStats({
       </div>
 
       <div className="results-actions-right">
-        {/* Filter by file source if multiple */}
-        {sources.length > 1 && (
-          <div className="filter-wrapper">
+        {/* Filter by Sheet or Source File */}
+        {hasMultipleFilters && (
+          <div className="filter-wrapper" title="Filter by Sheet or Source File">
             <Filter size={13} className="text-muted" />
             <select
-              value={selectedSource}
-              onChange={(e) => setSelectedSource(e.target.value)}
-              className="filter-select"
+              value={selectedSource || ''}
+              onChange={(e) => setSelectedSource && setSelectedSource(e.target.value)}
+              className="filter-select font-mono"
             >
-              <option value="">All Files ({sources.length})</option>
-              {sources.map((src) => (
-                <option key={src} value={src}>{src}</option>
-              ))}
+              <option value="">All Sheets & Sources</option>
+              {sheets.length > 0 && (
+                <optgroup label="Excel Sheets">
+                  {sheets.map((sh) => (
+                    <option key={`sheet:${sh}`} value={`sheet:${sh}`}>
+                      Sheet: {sh}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {fileSources.length > 0 && (
+                <optgroup label="Source Files">
+                  {fileSources.map((src) => (
+                    <option key={`file:${src}`} value={`file:${src}`}>
+                      File: {src}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </select>
+          </div>
+        )}
+
+        {/* Sorting Controls */}
+        {setSortField && (
+          <div className="sort-controls-wrapper">
+            <div className="sort-select-wrapper" title="Select field to sort by">
+              <ArrowUpDown size={13} className="text-muted" />
+              <select
+                value={sortField}
+                onChange={(e) => setSortField(e.target.value)}
+                className="filter-select sort-field-select"
+              >
+                <option value="duration">Sort: Duration (s)</option>
+                <option value="presses">Sort: Interactions / Presses</option>
+                <option value="exhibit">Sort: Exhibit / Station</option>
+              </select>
+            </div>
+
+            <button
+              type="button"
+              className={`sort-order-btn ${sortOrder === 'asc' ? 'asc-active' : 'desc-active'}`}
+              onClick={toggleSortOrder}
+              title={`Switch to ${sortOrder === 'asc' ? 'Descending (Highest first)' : 'Ascending (Lowest first)'}`}
+            >
+              {sortOrder === 'asc' ? (
+                <>
+                  <ArrowUp size={13} className="text-emerald" />
+                  <span>Ascending (Min at top)</span>
+                </>
+              ) : (
+                <>
+                  <ArrowDown size={13} className="text-indigo" />
+                  <span>Descending (Max at top)</span>
+                </>
+              )}
+            </button>
           </div>
         )}
 

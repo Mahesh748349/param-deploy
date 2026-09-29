@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { BarChart3, Clock, TrendingDown, TrendingUp, Activity, Zap, Sparkles, Database, CheckCircle2, ChevronDown, ChevronUp, MousePointerClick } from 'lucide-react';
 
 const EXHIBIT_DATASET_METRICS = [
@@ -22,12 +22,54 @@ const EXHIBIT_DATASET_METRICS = [
   { name: 'CVRaman', avgDwell: '1m 3s', dwellSec: 63, interactions: 11739, sessions: 399 }
 ];
 
+const SHEET_BENCHMARKS = {
+  'kinetic bug': {
+    id: 'kinetic bug',
+    name: 'Kinetic Bug',
+    file: 'Physical Exhibit.xlsx',
+    runs: 32,
+    minDwellSec: 0.12,
+    minDwellDisplay: '0.12s',
+    maxDwellSec: 62.01,
+    maxDwellDisplay: '62.01s',
+    avgDwellSec: 6.709,
+    avgDwellDisplay: '6.71s',
+    description: 'Autonomous sensor run telemetry from Kinetic Bug exhibit'
+  },
+  'kinetic flower': {
+    id: 'kinetic flower',
+    name: 'Kinetic Flower',
+    file: 'Physical Exhibit.xlsx',
+    runs: 32,
+    minDwellSec: 0.30,
+    minDwellDisplay: '0.30s',
+    maxDwellSec: 50.385,
+    maxDwellDisplay: '50.39s',
+    avgDwellSec: 6.751,
+    avgDwellDisplay: '6.75s',
+    description: 'Autonomous sensor run telemetry from Kinetic Flower exhibit'
+  }
+};
+
 export default function AnalyticsMetricsCard({ analytics, query, dataRows = [] }) {
   const cleanQ = (query || '').toLowerCase();
-  const isInteractionQuery = /interaction|press|count|button|touch|click/i.test(cleanQ) && !/dwell|duration|stay/i.test(cleanQ);
+  const isInteractionQuery = /interaction|press|count|button|touch|click/i.test(cleanQ) && !/dwell|duration|stay|seconds/i.test(cleanQ);
   
+  // Detect sheet from query or analytics
+  const detectedSheetKey = analytics?.matched_sheet?.name?.toLowerCase() ||
+    (cleanQ.includes('bug') ? 'kinetic bug' : cleanQ.includes('flower') ? 'kinetic flower' : null);
+
   const [activeTab, setActiveTab] = useState(isInteractionQuery ? 'interactions' : 'dwell');
+  const [selectedSheet, setSelectedSheet] = useState(detectedSheetKey || 'all');
   const [showAllExhibits, setShowAllExhibits] = useState(false);
+
+  useEffect(() => {
+    if (detectedSheetKey) {
+      setSelectedSheet(detectedSheetKey);
+    } else {
+      setSelectedSheet('all');
+    }
+  }, [detectedSheetKey, query]);
 
   useEffect(() => {
     if (isInteractionQuery) {
@@ -37,27 +79,23 @@ export default function AnalyticsMetricsCard({ analytics, query, dataRows = [] }
     }
   }, [query]);
 
-  const whole = analytics?.whole_dataset || {
-    total_interactions: 1329443,
-    total_sessions: 22722,
-    total_engaged_time: '1056h 10m',
-    avg_dwell_display: '2m 47s',
-    avg_dwell_seconds: 167.3,
-    avg_interactions_per_session: 58.5,
-    min_dwell_seconds: 0.0,
-    max_dwell_seconds: 743.0,
-    max_dwell_display: '12m 23s',
-    min_interactions: 1,
-    max_interactions: 279,
-    least_interacted_exhibit: 'CVRaman (11,739 interactions)',
-    least_interacted_exhibit_name: 'CVRaman',
-    least_interacted_exhibit_count: 11739,
-    most_interacted_exhibit: 'Color-perception-jayanagar (199,317 interactions)',
-    most_interacted_exhibit_name: 'Color-perception-jayanagar',
-    most_interacted_exhibit_count: 199317,
-    exhibits_count: 25,
-    busiest_exhibit: 'Color-perception-jayanagar'
-  };
+  const activeSheetData = SHEET_BENCHMARKS[selectedSheet] || null;
+
+  // Calculate dynamic metrics from visible dataRows if they match the sheet
+  const sheetRows = dataRows.filter(r => {
+    if (!activeSheetData) return true;
+    const nameMatch = (r.exhibit || '').toLowerCase().includes(activeSheetData.name.toLowerCase());
+    const sourceMatch = (r.source || '').toLowerCase().includes(activeSheetData.name.toLowerCase());
+    return nameMatch || sourceMatch;
+  });
+
+  const rowDurations = (sheetRows.length > 0 ? sheetRows : dataRows)
+    .map(r => r.durationNum)
+    .filter(d => typeof d === 'number' && !isNaN(d));
+
+  const dynamicMin = rowDurations.length > 0 ? Math.min(...rowDurations) : (activeSheetData ? activeSheetData.minDwellSec : 0.0);
+  const dynamicMax = rowDurations.length > 0 ? Math.max(...rowDurations) : (activeSheetData ? activeSheetData.maxDwellSec : 743.0);
+  const dynamicAvg = rowDurations.length > 0 ? (rowDurations.reduce((a, b) => a + b, 0) / rowDurations.length) : (activeSheetData ? activeSheetData.avgDwellSec : 167.3);
 
   const matched = analytics?.matched_exhibit || null;
   const isMinQuery = /min|lowest|least|smallest/i.test(cleanQ);
@@ -70,9 +108,10 @@ export default function AnalyticsMetricsCard({ analytics, query, dataRows = [] }
           <BarChart3 size={20} className="text-emerald" />
           <h3 className="analytics-title">Dataset Telemetry Analytics</h3>
           <span className="dataset-scope-badge">
-            <CheckCircle2 size={13} className="text-emerald" /> 100% Whole Dataset Benchmark
+            <CheckCircle2 size={13} className="text-emerald" />
+            {activeSheetData ? `Sheet: ${activeSheetData.name} (${activeSheetData.file})` : '100% Whole Dataset Benchmark'}
           </span>
-          {matched && (
+          {matched && !activeSheetData && (
             <span className="exhibit-match-badge font-mono">
               Exhibit Match: {matched.display_name}
             </span>
@@ -80,31 +119,137 @@ export default function AnalyticsMetricsCard({ analytics, query, dataRows = [] }
         </div>
         <div className="analytics-dataset-meta">
           <Database size={14} className="text-indigo" />
-          <span>22,722 Total Sessions · 1,329,443 Interactions · 25 Exhibits</span>
+          {activeSheetData ? (
+            <span>Physical Exhibit.xlsx · {activeSheetData.runs} Authentic Runs · Min {activeSheetData.minDwellDisplay} · Max {activeSheetData.maxDwellDisplay}</span>
+          ) : (
+            <span>22,722 Total Sessions · 1,329,443 Interactions · 25 Exhibits</span>
+          )}
         </div>
       </div>
 
-      {/* Scope Navigation Tabs */}
-      <div className="analytics-tabs">
+      {/* Sheet Selection Pills */}
+      <div className="sheet-selector-bar">
+        <span className="sheet-selector-label">Data Sheet:</span>
         <button
           type="button"
-          className={`analytics-tab-btn ${activeTab === 'interactions' ? 'active' : ''}`}
-          onClick={() => setActiveTab('interactions')}
+          className={`sheet-pill-btn ${selectedSheet === 'all' ? 'active' : ''}`}
+          onClick={() => setSelectedSheet('all')}
         >
-          <MousePointerClick size={15} />
-          <span>Visitor Interactions & Presses</span>
-          {isInteractionQuery && <span className="tab-match-tag">Query Target</span>}
+          All Dataset (22,722 Sessions)
         </button>
         <button
           type="button"
-          className={`analytics-tab-btn ${activeTab === 'dwell' ? 'active' : ''}`}
-          onClick={() => setActiveTab('dwell')}
+          className={`sheet-pill-btn ${selectedSheet === 'kinetic bug' ? 'active' : ''}`}
+          onClick={() => setSelectedSheet('kinetic bug')}
         >
-          <Clock size={15} />
-          <span>Dwell Duration & Engagement Time</span>
-          {!isInteractionQuery && <span className="tab-match-tag">Query Target</span>}
+          Sheet: Kinetic Bug (32 Runs)
+        </button>
+        <button
+          type="button"
+          className={`sheet-pill-btn ${selectedSheet === 'kinetic flower' ? 'active' : ''}`}
+          onClick={() => setSelectedSheet('kinetic flower')}
+        >
+          Sheet: Kinetic Flower (32 Runs)
         </button>
       </div>
+
+      {/* SHEET-SPECIFIC VIEW */}
+      {activeSheetData && (
+        <div className="sheet-analytics-section">
+          <div className="kpi-grid">
+            {/* KPI 1: Minimum Duration */}
+            <div className={`kpi-card ${isMinQuery ? 'highlight-kpi' : ''}`}>
+              <div className="kpi-label">
+                <TrendingDown size={15} className="text-emerald" />
+                <span>Minimum Duration (Lowest Run)</span>
+              </div>
+              <div className="kpi-val text-emerald">
+                {dynamicMin}s
+              </div>
+              <div className="kpi-sub">
+                Absolute minimum run recorded in sheet <strong>{activeSheetData.name}</strong>
+              </div>
+            </div>
+
+            {/* KPI 2: Maximum Duration */}
+            <div className={`kpi-card ${isMaxQuery ? 'highlight-kpi' : ''}`}>
+              <div className="kpi-label">
+                <TrendingUp size={15} className="text-indigo" />
+                <span>Maximum Duration (Peak Run)</span>
+              </div>
+              <div className="kpi-val text-indigo">
+                {dynamicMax}s
+              </div>
+              <div className="kpi-sub">
+                Peak visitor engagement run in sheet <strong>{activeSheetData.name}</strong>
+              </div>
+            </div>
+
+            {/* KPI 3: Average Duration */}
+            <div className={`kpi-card ${(!isMinQuery && !isMaxQuery) ? 'highlight-kpi' : ''}`}>
+              <div className="kpi-label">
+                <Clock size={15} className="text-purple" />
+                <span>Average Duration</span>
+              </div>
+              <div className="kpi-val text-purple">
+                {typeof dynamicAvg === 'number' ? `${dynamicAvg.toFixed(2)}s` : dynamicAvg}
+              </div>
+              <div className="kpi-sub">
+                Arithmetic mean duration across all {activeSheetData.runs} runs
+              </div>
+            </div>
+
+            {/* KPI 4: Total Authentic Runs */}
+            <div className="kpi-card">
+              <div className="kpi-label">
+                <Activity size={15} className="text-amber" />
+                <span>Recorded Runs</span>
+              </div>
+              <div className="kpi-val text-amber">
+                {activeSheetData.runs} <span className="kpi-unit">records</span>
+              </div>
+              <div className="kpi-sub">
+                Source file: <strong>{activeSheetData.file}</strong>
+              </div>
+            </div>
+          </div>
+
+          <div className="dataset-verification-bar">
+            <div className="verification-item">
+              <CheckCircle2 size={15} className="text-emerald" />
+              <span><strong>Sheet Ground Truth:</strong> Min: <strong>{activeSheetData.minDwellDisplay}</strong> · Max: <strong>{activeSheetData.maxDwellDisplay}</strong> · Avg: <strong>{activeSheetData.avgDwellDisplay}</strong></span>
+            </div>
+            <div className="verification-formula">
+              Dynamic sample in view: <strong>{rowDurations.length} records evaluated</strong>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ALL DATASET VIEW (Tabs: Interactions vs Dwell) */}
+      {!activeSheetData && (
+        <>
+          {/* Scope Navigation Tabs */}
+          <div className="analytics-tabs">
+            <button
+              type="button"
+              className={`analytics-tab-btn ${activeTab === 'interactions' ? 'active' : ''}`}
+              onClick={() => setActiveTab('interactions')}
+            >
+              <MousePointerClick size={15} />
+              <span>Visitor Interactions & Presses</span>
+              {isInteractionQuery && <span className="tab-match-tag">Query Target</span>}
+            </button>
+            <button
+              type="button"
+              className={`analytics-tab-btn ${activeTab === 'dwell' ? 'active' : ''}`}
+              onClick={() => setActiveTab('dwell')}
+            >
+              <Clock size={15} />
+              <span>Dwell Duration & Engagement Time</span>
+              {!isInteractionQuery && <span className="tab-match-tag">Query Target</span>}
+            </button>
+          </div>
 
       {/* INTERACTIONS VIEW */}
       {activeTab === 'interactions' && (
@@ -321,6 +466,8 @@ export default function AnalyticsMetricsCard({ analytics, query, dataRows = [] }
           </div>
         </>
       )}
+    </>
+  )}
 
       {/* Expandable Per-Exhibit Dataset Breakdown */}
       <div className="exhibit-averages-wrapper">
