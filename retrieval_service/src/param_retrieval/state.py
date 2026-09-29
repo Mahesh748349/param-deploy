@@ -183,6 +183,22 @@ class State:
             result = conn.execute(select(jobs).where(jobs.c.id == job_id)).mappings().first()
             return dict(result) if result else None
 
+    def active_image_suffix(self, blob, dataset, index_id):
+        with self.engine.connect() as conn:
+            suffix = conn.execute(select(jobs.c.suffix).join(documents, documents.c.active == jobs.c.token)
+                .where(documents.c.dataset == dataset, documents.c.index_id == index_id,
+                       documents.c.kind == "image", jobs.c.kind == "image", jobs.c.blob == blob,
+                       jobs.c.status == "complete").limit(1)).scalar_one_or_none()
+            return suffix
+
+    def active_sources(self, dataset, index_id):
+        with self.engine.connect() as conn:
+            rows = conn.execute(select(documents.c.id, documents.c.source, jobs.c.blob, jobs.c.suffix)
+                .join(jobs, and_(jobs.c.token == documents.c.active, jobs.c.doc_id == documents.c.id))
+                .where(documents.c.dataset == dataset, documents.c.index_id == index_id,
+                       documents.c.active.is_not(None), jobs.c.status == "complete", jobs.c.blob.is_not(None)))
+            return [dict(row._mapping) for row in rows]
+
     def status(self, index_id):
         from sqlalchemy import func
         with self.engine.connect() as conn:
