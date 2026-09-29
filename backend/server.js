@@ -133,8 +133,8 @@ const handleHealth = async (req, res) => {
 app.get('/health', handleHealth);
 app.get('/api/health', handleHealth);
 
-// Configurable relevance cutoff for reranked search results
-const MIN_RERANK_SCORE = 0.0;
+// Configurable relevance cutoff for cross-encoder reranked search results (logits can be negative)
+const MIN_RERANK_SCORE = -15.0;
 
 /**
  * Retrieve
@@ -185,8 +185,8 @@ app.post('/api/retrieve', requireAuthorizedTeamEmail, async (req, res) => {
     if (stripped.length > 2) {
       searchTargetQuery = `${stripped} exhibit telemetry`;
     }
-    // Fetch a richer sample of records so Gemini can compute min, max, average across multiple data points
-    retrievalTopK = Math.max(validatedTopK, 12);
+    // Fetch a rich sample of records (up to 35 candidates) so the calculation engine can inspect multiple exhibits and values
+    retrievalTopK = Math.max(validatedTopK, 35);
   }
 
   const startTime = Date.now();
@@ -194,12 +194,19 @@ app.post('/api/retrieve', requireAuthorizedTeamEmail, async (req, res) => {
   let upstreamSuccess = false;
   let isTimeoutOccurred = false;
 
-  // Wake up Render first if needed
+  // Fast pre-flight check only if upstream is currently sleeping (Render 502/503)
   try {
-    const wakeRes = await fetch(`${PARAM_SERVICE_URL}/health`, { method: 'GET' });
-    if (!wakeRes.ok) await new Promise(r => setTimeout(r, 6000));
+    const wakeRes = await fetch(`${PARAM_SERVICE_URL}/health`, { 
+      method: 'GET',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
+      }
+    });
+    if (wakeRes.status === 502 || wakeRes.status === 503) {
+      await new Promise(r => setTimeout(r, 4000));
+    }
   } catch {
-    await new Promise(r => setTimeout(r, 6000));
+    // Continue directly to retrieve
   }
 
   // Try upstream retrieval service with retries
@@ -210,13 +217,15 @@ app.post('/api/retrieve', requireAuthorizedTeamEmail, async (req, res) => {
       const timeout = setTimeout(() => {
         isTimeoutOccurred = true;
         controller.abort();
-      }, 25000);
+      }, 75000);
 
       const upstreamResponse = await fetch(`${PARAM_SERVICE_URL}/v1/retrieve`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${PARAM_READ_KEY}`,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
         },
         body: JSON.stringify({
           query: searchTargetQuery,
@@ -260,7 +269,7 @@ app.post('/api/retrieve', requireAuthorizedTeamEmail, async (req, res) => {
         if (typeof r.rerank_score === 'number') {
           return r.rerank_score >= MIN_RERANK_SCORE;
         }
-        return (r.score || 0) >= 0.012;
+        return (r.score || 0) > 0;
       });
 
       if (initialCount > 0 && upstreamData.text_results.length === 0) {
