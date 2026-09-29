@@ -317,6 +317,12 @@ const DATASET_METRICS = {
     max_dwell_exhibit: "TacTile",
     min_interactions: 1,
     max_interactions: 279,
+    least_interacted_exhibit: "CVRaman (11,739 interactions)",
+    least_interacted_exhibit_name: "CVRaman",
+    least_interacted_exhibit_count: 11739,
+    most_interacted_exhibit: "Color-perception-jayanagar (199,317 interactions)",
+    most_interacted_exhibit_name: "Color-perception-jayanagar",
+    most_interacted_exhibit_count: 199317,
     exhibits_count: 25,
     busiest_exhibit: "Color-perception-jayanagar (199,317 interactions)"
   },
@@ -610,15 +616,34 @@ app.post('/api/synthesize', requireAuthorizedTeamEmail, async (req, res) => {
 
   // If analytical/calculation query, provide concise acknowledgement pointing to dedicated metrics card
   const isAnalyticalQuery = /\b(minimum|maximum|average|highest|lowest|min|max|avg|sum|total|median|busiest)\b/i.test(cleanQuery);
+  const isInteractionQuery = /interaction|press|count|button|touch|click/i.test(cleanQuery);
+
   if (isAnalyticalQuery) {
     const analytics = calculateTelemetryMetrics(cleanQuery, text_results);
     const avgDisplay = analytics.matched_exhibit ? analytics.matched_exhibit.avg_dwell_display : analytics.whole_dataset.avg_dwell_display;
     const exhibitName = analytics.matched_exhibit ? analytics.matched_exhibit.display_name : "all 25 touch exhibits";
 
+    let summaryText = '';
+    if (isInteractionQuery) {
+      summaryText = `### **Visitor Interactions Analysis**\n\n` +
+        `• **Minimum Interactions (Single Session)**: **1 press** (recorded in granular session data)\n` +
+        `• **Least Interacted Exhibit (Museum-Wide)**: **${analytics.whole_dataset.least_interacted_exhibit}**\n` +
+        `• **Most Interacted Exhibit (Museum-Wide)**: **${analytics.whole_dataset.most_interacted_exhibit}**\n` +
+        `• **Average Interactions / Session**: **${analytics.whole_dataset.avg_interactions_per_session} presses** (${analytics.whole_dataset.total_interactions.toLocaleString()} total interactions ÷ ${analytics.whole_dataset.total_sessions.toLocaleString()} sessions)\n` +
+        `• **Total Museum Interactions**: **${analytics.whole_dataset.total_interactions.toLocaleString()} interactions** across 25 exhibits.\n\n` +
+        `*Interactive cards and telemetry session records are displayed in the dedicated panel below.*`;
+    } else {
+      summaryText = `### **Dwell Duration Analysis**\n\n` +
+        `• **Dataset Average Dwell Time**: **${avgDisplay}** (evaluated across ${exhibitName}, representing ${analytics.whole_dataset.total_sessions.toLocaleString()} visitor sessions).\n` +
+        `• **Session Dwell Extremes**: Minimum **${analytics.whole_dataset.min_dwell_seconds}s**, Maximum **${analytics.whole_dataset.max_dwell_display}** (${analytics.whole_dataset.max_dwell_seconds}s).\n` +
+        `• **Average Visitor Interactions**: **${analytics.whole_dataset.avg_interactions_per_session} presses** per session.\n\n` +
+        `*Comprehensive metrics and the extracted telemetry table are displayed in the dedicated cards below.*`;
+    }
+
     return res.json({
       query: cleanQuery,
       is_analytical: true,
-      summary: `### **Dataset Telemetry Analytics**\n\n• **Dataset Average Dwell Time**: **${avgDisplay}** (evaluated across ${exhibitName}, representing ${analytics.whole_dataset.total_sessions.toLocaleString()} visitor sessions).\n• **Session Dwell Extremes**: Minimum **${analytics.whole_dataset.min_dwell_seconds}s**, Maximum **${analytics.whole_dataset.max_dwell_display}** (${analytics.whole_dataset.max_dwell_seconds}s).\n• **Average Visitor Interactions**: **${analytics.whole_dataset.avg_interactions_per_session}** presses per session.\n\n*Comprehensive metrics and the extracted telemetry table are displayed in the dedicated cards below.*`,
+      summary: summaryText,
       model: "Param Telemetry Compute Engine",
       is_configured: true
     });
