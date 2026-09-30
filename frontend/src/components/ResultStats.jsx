@@ -14,8 +14,11 @@ import {
 } from 'lucide-react';
 
 const DATASET_SHEETS = [
+  { id: 'Engagement Sheet', label: 'Engagement Sheet', file: 'engagement-sessions-2026-09-15.csv', count: '22,722 sessions' },
+  { id: 'Result Sheet', label: 'Result Sheet', file: 'Query Results Table', count: 'Active search hits' },
   { id: 'Kinetic Bug', label: 'Kinetic Bug', file: 'Physical Exhibit.xlsx', count: '32 runs' },
-  { id: 'Kinetic Flower', label: 'Kinetic Flower', file: 'Physical Exhibit.xlsx', count: '32 runs' }
+  { id: 'Kinetic Flower', label: 'Kinetic Flower', file: 'Physical Exhibit.xlsx', count: '32 runs' },
+  { id: 'Executive Report Sheet', label: 'Executive Report Sheet', file: 'engagement-report-2026-09-15.pdf', count: 'Benchmark report' }
 ];
 
 const DATASET_FILES = [

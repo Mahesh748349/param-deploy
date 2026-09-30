@@ -172,14 +172,32 @@ export default function App() {
   const handleSheetChange = (sheet) => {
     setSelectedSheet(sheet);
     if (sheet) {
-      const hasRows = (results || []).some(r => {
-        const loc = (r.locator || '').toLowerCase();
-        const attr = (r.attributes?.sheet || '').toLowerCase();
-        return loc.includes(sheet.toLowerCase()) || attr === sheet.toLowerCase();
-      });
-      if (!hasRows) {
-        setQuery(sheet);
-        handleSearch(sheet);
+      if (sheet === 'Engagement Sheet') {
+        const hasRows = (results || []).some(r => (r.source || '').includes('engagement-sessions') || (r.locator || '').includes('engagement') || (r.text || '').includes('duration_s'));
+        if (!hasRows) {
+          setQuery('visitor engagement sessions');
+          handleSearch('visitor engagement sessions');
+        }
+      } else if (sheet === 'Result Sheet') {
+        // Active query results table - keep current results
+      } else if (sheet === 'Executive Report Sheet') {
+        const hasRows = (results || []).some(r => (r.source || '').includes('engagement-report') || (r.text || '').includes('executive') || (r.text || '').includes('report'));
+        if (!hasRows) {
+          setQuery('executive engagement report summary');
+          handleSearch('executive engagement report summary');
+        }
+      } else {
+        // Kinetic Bug or Kinetic Flower
+        const hasRows = (results || []).some(r => {
+          const loc = (r.locator || '').toLowerCase();
+          const attr = (r.attributes?.sheet || '').toLowerCase();
+          const txt = (r.text || '').toLowerCase();
+          return loc.includes(sheet.toLowerCase()) || attr.includes(sheet.toLowerCase()) || txt.includes(sheet.toLowerCase());
+        });
+        if (!hasRows) {
+          setQuery(sheet);
+          handleSearch(sheet);
+        }
       }
     }
   };
@@ -211,12 +229,22 @@ export default function App() {
 
     // 1. Sheet Filter
     if (selectedSheet) {
-      const target = selectedSheet.toLowerCase();
-      const loc = (r.locator || '').toLowerCase();
-      const attrSheet = (attrs.sheet || '').toLowerCase();
-      const text = (r.text || '').toLowerCase();
-      const isMatch = loc.includes(`sheet:${target}`) || loc.includes(target) || attrSheet === target || text.includes(target);
-      if (!isMatch) return false;
+      if (selectedSheet === 'Result Sheet') {
+        // All active retrieved results
+      } else if (selectedSheet === 'Engagement Sheet') {
+        const isMatch = (r.source || '').includes('engagement-sessions') || (r.locator || '').includes('engagement') || (r.text || '').includes('duration_s') || attrs.duration_s !== undefined;
+        if (!isMatch) return false;
+      } else if (selectedSheet === 'Executive Report Sheet') {
+        const isMatch = (r.source || '').includes('engagement-report') || (r.locator || '').includes('report') || (r.text || '').includes('report');
+        if (!isMatch) return false;
+      } else {
+        const target = selectedSheet.toLowerCase();
+        const loc = (r.locator || '').toLowerCase();
+        const attrSheet = (attrs.sheet || '').toLowerCase();
+        const text = (r.text || '').toLowerCase();
+        const isMatch = loc.includes(`sheet:${target}`) || loc.includes(target) || attrSheet === target || text.includes(target);
+        if (!isMatch) return false;
+      }
     }
 
     // 2. File Filter

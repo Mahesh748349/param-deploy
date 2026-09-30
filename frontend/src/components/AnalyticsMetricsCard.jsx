@@ -23,31 +23,91 @@ const EXHIBIT_DATASET_METRICS = [
 ];
 
 const SHEET_BENCHMARKS = {
+  'engagement sheet': {
+    id: 'engagement sheet',
+    name: 'Engagement Sheet',
+    file: 'engagement-sessions-2026-09-15.csv',
+    runs: '22,722 sessions',
+    sessions: 22722,
+    interactions: 1329443,
+    minDwellSec: 0.0,
+    minDwellDisplay: '0.0s',
+    maxDwellSec: 743.0,
+    maxDwellDisplay: '12m 23s (743.0s)',
+    avgDwellSec: 167.3,
+    avgDwellDisplay: '2m 47s (167.3s)',
+    minPresses: 1,
+    maxPresses: 279,
+    avgPresses: 58.5,
+    unit: 'seconds',
+    description: 'Master visitor session engagement telemetry archive across 25 exhibits'
+  },
+  'result sheet': {
+    id: 'result sheet',
+    name: 'Result Sheet',
+    file: 'Query Results Table',
+    runs: 'Dynamic',
+    isDynamic: true,
+    minDwellSec: 0.0,
+    minDwellDisplay: 'Dynamic',
+    maxDwellSec: 0.0,
+    maxDwellDisplay: 'Dynamic',
+    avgDwellSec: 0.0,
+    avgDwellDisplay: 'Dynamic',
+    description: 'Retrieved candidate records matching active query'
+  },
   'kinetic bug': {
     id: 'kinetic bug',
     name: 'Kinetic Bug',
     file: 'Physical Exhibit.xlsx',
-    runs: 32,
+    runs: '32 runs',
     minDwellSec: 0.12,
     minDwellDisplay: '0.12s',
     maxDwellSec: 62.01,
     maxDwellDisplay: '62.01s',
     avgDwellSec: 6.709,
     avgDwellDisplay: '6.71s',
+    minPresses: 1,
+    maxPresses: 1,
+    avgPresses: 1.0,
+    unit: 'seconds',
     description: 'Autonomous sensor run telemetry from Kinetic Bug exhibit'
   },
   'kinetic flower': {
     id: 'kinetic flower',
     name: 'Kinetic Flower',
     file: 'Physical Exhibit.xlsx',
-    runs: 32,
+    runs: '32 runs',
     minDwellSec: 0.30,
     minDwellDisplay: '0.30s',
     maxDwellSec: 50.385,
     maxDwellDisplay: '50.39s',
     avgDwellSec: 6.751,
     avgDwellDisplay: '6.75s',
+    minPresses: 1,
+    maxPresses: 1,
+    avgPresses: 1.0,
+    unit: 'seconds',
     description: 'Autonomous sensor run telemetry from Kinetic Flower exhibit'
+  },
+  'executive report sheet': {
+    id: 'executive report sheet',
+    name: 'Executive Report Sheet',
+    file: 'engagement-report-2026-09-15.pdf',
+    runs: 'Benchmark Report',
+    sessions: 22722,
+    interactions: 1329443,
+    minDwellSec: 0.0,
+    minDwellDisplay: '0.0s',
+    maxDwellSec: 743.0,
+    maxDwellDisplay: '12m 23s (743.0s)',
+    avgDwellSec: 167.3,
+    avgDwellDisplay: '2m 47s (167.3s)',
+    minPresses: 1,
+    maxPresses: 279,
+    avgPresses: 58.5,
+    unit: 'seconds',
+    description: 'Museum-wide executive benchmark report and institutional exhibit rankings'
   }
 };
 
@@ -56,8 +116,13 @@ export default function AnalyticsMetricsCard({ analytics, query, dataRows = [] }
   const isInteractionQuery = /interaction|press|count|button|touch|click/i.test(cleanQ) && !/dwell|duration|stay|seconds/i.test(cleanQ);
   
   // Detect sheet from query or analytics
-  const detectedSheetKey = analytics?.matched_sheet?.name?.toLowerCase() ||
-    (cleanQ.includes('bug') ? 'kinetic bug' : cleanQ.includes('flower') ? 'kinetic flower' : null);
+  const detectedSheetKey = analytics?.matched_sheet?.id ||
+    analytics?.matched_sheet?.name?.toLowerCase() ||
+    (cleanQ.includes('engagement') ? 'engagement sheet' :
+     cleanQ.includes('result') ? 'result sheet' :
+     cleanQ.includes('bug') ? 'kinetic bug' :
+     cleanQ.includes('flower') ? 'kinetic flower' :
+     cleanQ.includes('report') ? 'executive report sheet' : null);
 
   const [activeTab, setActiveTab] = useState(isInteractionQuery ? 'interactions' : 'dwell');
   const [selectedSheet, setSelectedSheet] = useState(detectedSheetKey || 'all');
@@ -84,6 +149,10 @@ export default function AnalyticsMetricsCard({ analytics, query, dataRows = [] }
   // Calculate dynamic metrics from visible dataRows if they match the sheet
   const sheetRows = dataRows.filter(r => {
     if (!activeSheetData) return true;
+    if (activeSheetData.id === 'result sheet') return true;
+    if (activeSheetData.id === 'engagement sheet') {
+      return (r.source || '').includes('engagement-sessions') || r.durationNum !== undefined;
+    }
     const nameMatch = (r.exhibit || '').toLowerCase().includes(activeSheetData.name.toLowerCase());
     const sourceMatch = (r.source || '').toLowerCase().includes(activeSheetData.name.toLowerCase());
     return nameMatch || sourceMatch;
@@ -92,6 +161,10 @@ export default function AnalyticsMetricsCard({ analytics, query, dataRows = [] }
   const rowDurations = (sheetRows.length > 0 ? sheetRows : dataRows)
     .map(r => r.durationNum)
     .filter(d => typeof d === 'number' && !isNaN(d));
+
+  const rowPresses = (sheetRows.length > 0 ? sheetRows : dataRows)
+    .map(r => r.presses)
+    .filter(p => typeof p === 'number' && !isNaN(p));
 
   const dynamicMin = rowDurations.length > 0 ? Math.min(...rowDurations) : (activeSheetData ? activeSheetData.minDwellSec : 0.0);
   const dynamicMax = rowDurations.length > 0 ? Math.max(...rowDurations) : (activeSheetData ? activeSheetData.maxDwellSec : 743.0);
@@ -120,7 +193,7 @@ export default function AnalyticsMetricsCard({ analytics, query, dataRows = [] }
         <div className="analytics-dataset-meta">
           <Database size={14} className="text-indigo" />
           {activeSheetData ? (
-            <span>Physical Exhibit.xlsx · {activeSheetData.runs} Authentic Runs · Min {activeSheetData.minDwellDisplay} · Max {activeSheetData.maxDwellDisplay}</span>
+            <span>{activeSheetData.file} · {activeSheetData.runs} · Min {activeSheetData.minDwellDisplay} · Max {activeSheetData.maxDwellDisplay}</span>
           ) : (
             <span>22,722 Total Sessions · 1,329,443 Interactions · 25 Exhibits</span>
           )}
@@ -129,27 +202,48 @@ export default function AnalyticsMetricsCard({ analytics, query, dataRows = [] }
 
       {/* Sheet Selection Pills */}
       <div className="sheet-selector-bar">
-        <span className="sheet-selector-label">Data Sheet:</span>
+        <span className="sheet-selector-label">Sheets:</span>
         <button
           type="button"
           className={`sheet-pill-btn ${selectedSheet === 'all' ? 'active' : ''}`}
           onClick={() => setSelectedSheet('all')}
         >
-          All Dataset (22,722 Sessions)
+          All Sheets (Whole Dataset)
+        </button>
+        <button
+          type="button"
+          className={`sheet-pill-btn ${selectedSheet === 'engagement sheet' ? 'active' : ''}`}
+          onClick={() => setSelectedSheet('engagement sheet')}
+        >
+          Engagement Sheet (22.7k)
+        </button>
+        <button
+          type="button"
+          className={`sheet-pill-btn ${selectedSheet === 'result sheet' ? 'active' : ''}`}
+          onClick={() => setSelectedSheet('result sheet')}
+        >
+          Result Sheet ({dataRows.length} Hits)
         </button>
         <button
           type="button"
           className={`sheet-pill-btn ${selectedSheet === 'kinetic bug' ? 'active' : ''}`}
           onClick={() => setSelectedSheet('kinetic bug')}
         >
-          Sheet: Kinetic Bug (32 Runs)
+          Kinetic Bug (32)
         </button>
         <button
           type="button"
           className={`sheet-pill-btn ${selectedSheet === 'kinetic flower' ? 'active' : ''}`}
           onClick={() => setSelectedSheet('kinetic flower')}
         >
-          Sheet: Kinetic Flower (32 Runs)
+          Kinetic Flower (32)
+        </button>
+        <button
+          type="button"
+          className={`sheet-pill-btn ${selectedSheet === 'executive report sheet' ? 'active' : ''}`}
+          onClick={() => setSelectedSheet('executive report sheet')}
+        >
+          Executive Report Sheet
         </button>
       </div>
 
@@ -161,13 +255,15 @@ export default function AnalyticsMetricsCard({ analytics, query, dataRows = [] }
             <div className={`kpi-card ${isMinQuery ? 'highlight-kpi' : ''}`}>
               <div className="kpi-label">
                 <TrendingDown size={15} className="text-emerald" />
-                <span>Minimum Duration (Lowest Run)</span>
+                <span>Minimum Duration {activeSheetData.isDynamic ? '(Active Filter)' : '(Lowest Run)'}</span>
               </div>
               <div className="kpi-val text-emerald">
-                {dynamicMin}s
+                {activeSheetData.isDynamic
+                  ? (dynamicMin > 0 ? `${dynamicMin}s` : '0.0s')
+                  : activeSheetData.minDwellDisplay}
               </div>
               <div className="kpi-sub">
-                Absolute minimum run recorded in sheet <strong>{activeSheetData.name}</strong>
+                {activeSheetData.id === 'engagement sheet' ? 'Quick bounce / instant touch in CSV' : `Minimum recorded in ${activeSheetData.name}`}
               </div>
             </div>
 
@@ -175,13 +271,15 @@ export default function AnalyticsMetricsCard({ analytics, query, dataRows = [] }
             <div className={`kpi-card ${isMaxQuery ? 'highlight-kpi' : ''}`}>
               <div className="kpi-label">
                 <TrendingUp size={15} className="text-indigo" />
-                <span>Maximum Duration (Peak Run)</span>
+                <span>Maximum Duration {activeSheetData.isDynamic ? '(Active Filter)' : '(Peak Run)'}</span>
               </div>
               <div className="kpi-val text-indigo">
-                {dynamicMax}s
+                {activeSheetData.isDynamic
+                  ? (dynamicMax > 0 ? `${dynamicMax}s` : '0.0s')
+                  : activeSheetData.maxDwellDisplay}
               </div>
               <div className="kpi-sub">
-                Peak visitor engagement run in sheet <strong>{activeSheetData.name}</strong>
+                {activeSheetData.id === 'engagement sheet' ? 'Peak single-session dwell (TacTile)' : `Peak run in ${activeSheetData.name}`}
               </div>
             </div>
 
@@ -192,24 +290,36 @@ export default function AnalyticsMetricsCard({ analytics, query, dataRows = [] }
                 <span>Average Duration</span>
               </div>
               <div className="kpi-val text-purple">
-                {typeof dynamicAvg === 'number' ? `${dynamicAvg.toFixed(2)}s` : dynamicAvg}
+                {activeSheetData.isDynamic
+                  ? (typeof dynamicAvg === 'number' ? `${dynamicAvg.toFixed(2)}s` : dynamicAvg)
+                  : activeSheetData.avgDwellDisplay}
               </div>
               <div className="kpi-sub">
-                Arithmetic mean duration across all {activeSheetData.runs} runs
+                {activeSheetData.id === 'engagement sheet'
+                  ? 'Mean across all 22,722 sessions (167.3s)'
+                  : activeSheetData.isDynamic
+                  ? `Computed from ${rowDurations.length} matching search hits`
+                  : `Arithmetic mean across all ${activeSheetData.runs}`}
               </div>
             </div>
 
-            {/* KPI 4: Total Authentic Runs */}
+            {/* KPI 4: Scope / Interactions */}
             <div className="kpi-card">
               <div className="kpi-label">
                 <Activity size={15} className="text-amber" />
-                <span>Recorded Runs</span>
+                <span>{activeSheetData.interactions ? 'Visitor Interactions' : 'Recorded Volume'}</span>
               </div>
               <div className="kpi-val text-amber">
-                {activeSheetData.runs} <span className="kpi-unit">records</span>
+                {activeSheetData.interactions
+                  ? `${activeSheetData.avgPresses} avg`
+                  : activeSheetData.isDynamic
+                  ? `${rowDurations.length} hits`
+                  : activeSheetData.runs}
               </div>
               <div className="kpi-sub">
-                Source file: <strong>{activeSheetData.file}</strong>
+                {activeSheetData.interactions
+                  ? `Min: ${activeSheetData.minPresses} | Max: ${activeSheetData.maxPresses} presses`
+                  : `File: ${activeSheetData.file}`}
               </div>
             </div>
           </div>
@@ -217,10 +327,12 @@ export default function AnalyticsMetricsCard({ analytics, query, dataRows = [] }
           <div className="dataset-verification-bar">
             <div className="verification-item">
               <CheckCircle2 size={15} className="text-emerald" />
-              <span><strong>Sheet Ground Truth:</strong> Min: <strong>{activeSheetData.minDwellDisplay}</strong> · Max: <strong>{activeSheetData.maxDwellDisplay}</strong> · Avg: <strong>{activeSheetData.avgDwellDisplay}</strong></span>
+              <span><strong>Sheet: {activeSheetData.name}</strong> ({activeSheetData.file}) · {activeSheetData.description}</span>
             </div>
             <div className="verification-formula">
-              Dynamic sample in view: <strong>{rowDurations.length} records evaluated</strong>
+              {activeSheetData.isDynamic
+                ? `Dynamic search hits: ${rowDurations.length} records in view`
+                : `Authentic ground truth: Min ${activeSheetData.minDwellDisplay} · Max ${activeSheetData.maxDwellDisplay} · Avg ${activeSheetData.avgDwellDisplay}`}
             </div>
           </div>
         </div>

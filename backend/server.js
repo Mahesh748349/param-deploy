@@ -473,8 +473,38 @@ const DATASET_METRICS = {
     }
   },
   sheets: {
+    "engagement sheet": {
+      id: "engagement sheet",
+      name: "Engagement Sheet",
+      aliases: ["engagement", "engagement sheet", "engagement sessions", "sessions sheet"],
+      file: "engagement-sessions-2026-09-15.csv",
+      total_runs: 22722,
+      total_sessions: 22722,
+      total_interactions: 1329443,
+      min_dwell_seconds: 0.0,
+      max_dwell_seconds: 743.0,
+      avg_dwell_seconds: 167.3,
+      min_dwell_display: "0.0s",
+      max_dwell_display: "12m 23s (743.0s)",
+      avg_dwell_display: "2m 47s (167.3s)",
+      min_interactions: 1,
+      max_interactions: 279,
+      avg_interactions: 58.5,
+      unit: "seconds",
+      description: "Master visitor session engagement telemetry archive across 25 exhibits"
+    },
+    "result sheet": {
+      id: "result sheet",
+      name: "Result Sheet",
+      aliases: ["result", "result sheet", "results", "results table", "query results"],
+      file: "Query Results Table",
+      total_runs: "Dynamic",
+      description: "Real-time retrieved candidate records matching active query"
+    },
     "kinetic bug": {
+      id: "kinetic bug",
       name: "Kinetic Bug",
+      aliases: ["kinetic bug", "bug sheet", "bug"],
       file: "Physical Exhibit.xlsx",
       total_runs: 32,
       min_dwell_seconds: 0.12,
@@ -483,10 +513,16 @@ const DATASET_METRICS = {
       min_dwell_display: "0.12s",
       max_dwell_display: "62.01s",
       avg_dwell_display: "6.71s",
-      unit: "seconds"
+      min_interactions: 1,
+      max_interactions: 1,
+      avg_interactions: 1.0,
+      unit: "seconds",
+      description: "Autonomous physical sensor run telemetry for Kinetic Bug installation"
     },
     "kinetic flower": {
+      id: "kinetic flower",
       name: "Kinetic Flower",
+      aliases: ["kinetic flower", "flower sheet", "flower"],
       file: "Physical Exhibit.xlsx",
       total_runs: 32,
       min_dwell_seconds: 0.3,
@@ -495,7 +531,31 @@ const DATASET_METRICS = {
       min_dwell_display: "0.30s",
       max_dwell_display: "50.39s",
       avg_dwell_display: "6.75s",
-      unit: "seconds"
+      min_interactions: 1,
+      max_interactions: 1,
+      avg_interactions: 1.0,
+      unit: "seconds",
+      description: "Autonomous physical sensor run telemetry for Kinetic Flower installation"
+    },
+    "executive report sheet": {
+      id: "executive report sheet",
+      name: "Executive Report Sheet",
+      aliases: ["report sheet", "executive report", "summary sheet", "report", "executive summary"],
+      file: "engagement-report-2026-09-15.pdf",
+      total_runs: 22722,
+      total_sessions: 22722,
+      total_interactions: 1329443,
+      min_dwell_seconds: 0.0,
+      max_dwell_seconds: 743.0,
+      avg_dwell_seconds: 167.3,
+      min_dwell_display: "0.0s",
+      max_dwell_display: "12m 23s",
+      avg_dwell_display: "2m 47s",
+      min_interactions: 1,
+      max_interactions: 279,
+      avg_interactions: 58.5,
+      unit: "seconds",
+      description: "Official executive benchmark report and museum visitor performance metrics"
     }
   }
 };
@@ -510,7 +570,8 @@ function calculateTelemetryMetrics(cleanQuery, text_results) {
   // 1. Check if query targets a specific sheet
   let matchedSheet = null;
   for (const [key, sData] of Object.entries(DATASET_METRICS.sheets)) {
-    if (qLower.includes(key) || qLower.includes(sData.name.toLowerCase())) {
+    const aliases = sData.aliases || [key, sData.name.toLowerCase()];
+    if (aliases.some(a => qLower.includes(a)) || qLower.includes(key) || qLower.includes(sData.name.toLowerCase())) {
       matchedSheet = sData;
       break;
     }
@@ -701,27 +762,109 @@ app.post('/api/synthesize', requireAuthorizedTeamEmail, async (req, res) => {
     return res.status(400).json({ error: 'Query cannot be empty.' });
   }
 
-  // If analytical/calculation query, provide concise acknowledgement pointing to dedicated metrics card
+  // Check for sheet queries, list queries, and analytical calculations
+  const isSheetListQuery = /\b(all sheets|what sheets|which sheets|list sheets|show sheets|available sheets|how many sheets|what are the sheets|sheets in (this|the) (dataset|file|archive))\b/i.test(cleanQuery);
+  const matchedSheetData = Object.values(DATASET_METRICS.sheets).find(s => {
+    const aliases = s.aliases || [s.id, s.name.toLowerCase()];
+    return aliases.some(a => cleanQuery.toLowerCase().includes(a));
+  });
   const isAnalyticalQuery = /\b(minimum|maximum|average|highest|lowest|min|max|avg|sum|total|median|busiest)\b/i.test(cleanQuery);
   const isInteractionQuery = /interaction|press|count|button|touch|click/i.test(cleanQuery) && !/dwell|duration|stay|seconds/i.test(cleanQuery);
 
-  if (isAnalyticalQuery) {
+  if (isSheetListQuery) {
+    const sheetSummary = `### **Master Dataset Sheets & Tables Overview**\n\n` +
+      `The Param knowledge system indexes data across several authentic sheets and documents:\n\n` +
+      `1. **Engagement Sheet** (\`engagement-sessions-2026-09-15.csv\`):\n` +
+      `   • **Total Records**: **22,722 visitor sessions** across 25 interactive exhibits\n` +
+      `   • **Total Interactions**: **1,329,443 presses / touch actions**\n` +
+      `   • **Average Dwell Time**: **2m 47s** (167.3s) | **Range**: **0.0s** to **743.0s** (12m 23s)\n` +
+      `   • **Interactions / Session**: **58.5 presses** (Min: 1, Max: 279)\n\n` +
+      `2. **Kinetic Bug Sheet** (\`Physical Exhibit.xlsx\`):\n` +
+      `   • **Total Records**: **32 physical runs**\n` +
+      `   • **Average Duration**: **6.71s** | **Range**: **0.12s** to **62.01s**\n` +
+      `   • **Data Fields**: Date, Start Time, End Time, Total Seconds\n\n` +
+      `3. **Kinetic Flower Sheet** (\`Physical Exhibit.xlsx\`):\n` +
+      `   • **Total Records**: **32 physical runs**\n` +
+      `   • **Average Duration**: **6.75s** | **Range**: **0.30s** to **50.39s**\n` +
+      `   • **Data Fields**: Date, Start Time, End Time, Total Seconds\n\n` +
+      `4. **Result Sheet** (\`Query Results Table\`):\n` +
+      `   • **Active Search Candidates**: Real-time retrieved candidate records matching your query\n` +
+      `   • **Controls**: Dynamic Ascending (↑ lowest first) and Descending (↓ highest first) sorting\n\n` +
+      `5. **Executive Report Sheet** (\`engagement-report-2026-09-15.pdf\`):\n` +
+      `   • High-level executive benchmarks, gallery flow analysis, and exhibit engagement rankings.\n\n` +
+      `*You can filter by any sheet using the **Sheets** dropdown menu above.*`;
+
+    return res.json({
+      query: cleanQuery,
+      is_analytical: true,
+      summary: sheetSummary,
+      model: "Param Telemetry Compute Engine",
+      is_configured: true
+    });
+  }
+
+  if (isAnalyticalQuery || matchedSheetData) {
     const analytics = calculateTelemetryMetrics(cleanQuery, text_results);
+    const activeSheet = matchedSheetData || analytics.matched_sheet;
     let summaryText = '';
 
-    // If query specifies or targets a sheet (e.g. Kinetic Bug, Kinetic Flower)
-    if (analytics.matched_sheet) {
-      const s = analytics.matched_sheet;
-      const dynMin = analytics.sample_records?.min_dwell !== undefined ? analytics.sample_records.min_dwell : s.min_dwell_seconds;
-      const dynMax = analytics.sample_records?.max_dwell !== undefined ? analytics.sample_records.max_dwell : s.max_dwell_seconds;
-      const dynAvg = analytics.sample_records?.avg_dwell !== undefined ? analytics.sample_records.avg_dwell : s.avg_dwell_seconds;
+    // If query specifies or targets a sheet
+    if (activeSheet) {
+      const s = activeSheet;
+      if (s.id === 'engagement sheet') {
+        if (isInteractionQuery) {
+          summaryText = `### **Engagement Sheet Interactions Analysis** (${s.file})\n\n` +
+            `• **Total Museum Interactions**: **${s.total_interactions.toLocaleString()} presses** across **${s.total_sessions.toLocaleString()} sessions**\n` +
+            `• **Average Interactions / Session**: **${s.avg_interactions} presses**\n` +
+            `• **Minimum Interactions (Single Session)**: **${s.min_interactions} press**\n` +
+            `• **Maximum Interactions (Single Session)**: **${s.max_interactions} presses**\n` +
+            `• **Top Interacted Exhibits**: Color-perception (199,317 presses), OKI-2 (145,898 presses), Rangolify (137,837 presses)\n\n` +
+            `*Full telemetry session cards are displayed in the interactive grid below.*`;
+        } else {
+          summaryText = `### **Engagement Sheet Telemetry Analysis** (${s.file})\n\n` +
+            `• **Average Visitor Dwell Time**: **${s.avg_dwell_display}** (${s.avg_dwell_seconds}s) across all 22,722 sessions\n` +
+            `• **Minimum Recorded Dwell**: **${s.min_dwell_display}** (instant touch / bounce)\n` +
+            `• **Maximum Recorded Dwell**: **${s.max_dwell_display}** (Peak single-session dwell at TacTile)\n` +
+            `• **Total Sessions**: **${s.total_sessions.toLocaleString()} sessions** | **Total Engaged Time**: **${DATASET_METRICS.whole_dataset.total_engaged_time}**\n` +
+            `• **Average Interactions**: **${s.avg_interactions} presses** per session\n\n` +
+            `*Granular records from **${s.file}** are listed in the search results table below.*`;
+        }
+      } else if (s.id === 'result sheet') {
+        const sampleCount = analytics.sample_records?.count || 0;
+        const dynMin = analytics.sample_records?.min_dwell !== undefined ? analytics.sample_records.min_dwell : 0;
+        const dynMax = analytics.sample_records?.max_dwell !== undefined ? analytics.sample_records.max_dwell : 0;
+        const dynAvg = analytics.sample_records?.avg_dwell !== undefined ? analytics.sample_records.avg_dwell : 0;
+        const dynMinPress = analytics.sample_records?.min_interactions !== undefined ? analytics.sample_records.min_interactions : 1;
+        const dynMaxPress = analytics.sample_records?.max_interactions !== undefined ? analytics.sample_records.max_interactions : 1;
+        const dynAvgPress = analytics.sample_records?.avg_interactions !== undefined ? analytics.sample_records.avg_interactions : 1;
 
-      summaryText = `### **${s.name} Sheet Telemetry Analysis** (${s.file})\n\n` +
-        `• **Minimum Engagement Time**: **${dynMin}s** (Lowest recorded run in ${s.name})\n` +
-        `• **Maximum Engagement Time**: **${dynMax}s** (Peak recorded run in ${s.name})\n` +
-        `• **Average Engagement Time**: **${typeof dynAvg === 'number' ? dynAvg.toFixed(2) : dynAvg}s** (${s.avg_dwell_display})\n` +
-        `• **Total Runs in Sheet**: **${s.total_runs} authentic records**\n\n` +
-        `*Individual records from the **${s.name}** sheet are extracted in the telemetry table below. You can sort them in **Ascending (↑ Lowest First)** or **Descending (↓ Highest First)** order.*`;
+        summaryText = `### **Result Sheet (Active Search Records)**\n\n` +
+          `• **Retrieved Candidates**: **${sampleCount} records** matching current query\n` +
+          `• **Duration Range**: Minimum **${dynMin}s** | Maximum **${dynMax}s** | Average **${typeof dynAvg === 'number' ? dynAvg.toFixed(2) : dynAvg}s**\n` +
+          `• **Interactions Range**: Minimum **${dynMinPress} press** | Maximum **${dynMaxPress} presses** | Average **${typeof dynAvgPress === 'number' ? dynAvgPress.toFixed(1) : dynAvgPress} presses**\n\n` +
+          `*You can sort the table below in **Ascending (Lowest First)** or **Descending (Highest First)** order using the sort controls.*`;
+      } else if (s.id === 'executive report sheet') {
+        summaryText = `### **Executive Benchmark Report Sheet** (${s.file})\n\n` +
+          `• **Report Type**: Official museum-wide executive visitor engagement report\n` +
+          `• **Scope**: 22,722 visitor sessions across 25 exhibits totaling 1,056h 10m engaged time\n` +
+          `• **Official Average Dwell**: **2m 47s** (167.3s)\n` +
+          `• **Dwell Extremes**: Minimum **0.0s** | Maximum **12m 23s** (743.0s)\n` +
+          `• **Average Interactions**: **58.5 presses** per session (1,329,443 total)\n\n` +
+          `*Full executive benchmarks and findings are extracted below.*`;
+      } else {
+        // Kinetic Bug or Kinetic Flower
+        const dynMin = analytics.sample_records?.min_dwell !== undefined ? analytics.sample_records.min_dwell : s.min_dwell_seconds;
+        const dynMax = analytics.sample_records?.max_dwell !== undefined ? analytics.sample_records.max_dwell : s.max_dwell_seconds;
+        const dynAvg = analytics.sample_records?.avg_dwell !== undefined ? analytics.sample_records.avg_dwell : s.avg_dwell_seconds;
+
+        summaryText = `### **${s.name} Sheet Telemetry Analysis** (${s.file})\n\n` +
+          `• **Minimum Engagement Time**: **${dynMin}s** (Lowest recorded run in ${s.name})\n` +
+          `• **Maximum Engagement Time**: **${dynMax}s** (Peak recorded run in ${s.name})\n` +
+          `• **Average Engagement Time**: **${typeof dynAvg === 'number' ? dynAvg.toFixed(2) : dynAvg}s** (${s.avg_dwell_display})\n` +
+          `• **Total Runs in Sheet**: **${s.total_runs} authentic records**\n` +
+          `• **Description**: ${s.description}\n\n` +
+          `*Individual records from the **${s.name}** sheet are extracted in the telemetry table below. You can sort them in **Ascending (↑ Lowest First)** or **Descending (↓ Highest First)** order.*`;
+      }
     } else if (isInteractionQuery) {
       summaryText = `### **Visitor Interactions Analysis**\n\n` +
         `• **Minimum Interactions (Single Session)**: **1 press** (recorded in granular session data)\n` +
