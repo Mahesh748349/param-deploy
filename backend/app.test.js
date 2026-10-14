@@ -1,11 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createApp } from './app.js';
+import { createApp, isCalculation } from './app.js';
 
 const env = { PARAM_SERVICE_URL: 'https://retrieval.test', PARAM_READ_KEY: 'read-test',
   SUPABASE_URL: 'https://auth.test', SUPABASE_ANON_KEY: 'public-test', ALLOWED_EMAILS: 'team@example.test' };
 const json = (data, status = 200) => new Response(JSON.stringify(data), { status });
 const verified = { email: 'team@example.test', email_confirmed_at: '2026-01-01' };
+
+test('natural duration and count questions route to deterministic calculations', () => {
+  for (const query of [
+    'How long did visitors usually spend at the color perception exhibit?',
+    'What was the longest visit to the Kinetic Bug exhibit?',
+    'What was the shortest visit to Kinetic Flower?',
+    'How much time did visitors spend altogether at color perception?',
+    'How many visits were recorded at color perception?'
+  ]) assert.equal(isCalculation(query), true, query);
+  assert.equal(isCalculation('how to make pizza'), false);
+  assert.equal(isCalculation('Kinetic Bug exhibit usage'), false);
+});
 
 async function withApp(fn, handler, config = env) {
   const calls = [];

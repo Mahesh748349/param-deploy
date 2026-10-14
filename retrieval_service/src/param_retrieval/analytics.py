@@ -7,6 +7,7 @@ from datetime import date, datetime
 from pydantic import model_validator
 
 from .filters import SearchFilters, filter_metadata, normalize_exhibit
+from .intent import calculation_intent
 
 
 class AggregateFilters(SearchFilters):
@@ -20,13 +21,6 @@ class AggregateFilters(SearchFilters):
         return self
 
 
-OPERATIONS = {
-    "min": r"\b(min|minimum|lowest|shortest|smallest)\b",
-    "max": r"\b(max|maximum|highest|longest|largest)\b",
-    "average": r"\b(avg|average|mean)\b",
-    "sum": r"\b(sum|total)\b",
-    "count": r"\b(count|how many|number of)\b",
-}
 DURATION_FIELDS = {"durations": 1, "duration": 1, "durationsseconds": 1,
     "durationseconds": 1, "totalseconds": 1, "dwell": 1, "dwellseconds": 1,
     "dwells": 1, "durationmin": 60, "durationminutes": 60, "dwellminutes": 60,
@@ -124,6 +118,10 @@ def summary(operation, values):
     return min(values) if operation == "min" else max(values)
 
 
+def display_number(value):
+    return f"{value:,.6f}".rstrip("0").rstrip(".")
+
+
 def calculate(query, points, filters=None, max_records=200_000):
     if not query.strip():
         raise ValueError("Query must contain text.")
@@ -133,30 +131,7 @@ def calculate(query, points, filters=None, max_records=200_000):
         raise ValueError("Supported calculations: min, max, average, sum and count; use 'total interactions by exhibit' for exhibit comparisons.")
     if re.search(r"\bgallery\b|\b(?:in|at|from)\s+(?:whitefield|jayanagar)\b", lowered):
         raise ValueError("Gallery/location filters are not supported. Select a named exhibit, source or sheet.")
-    # 'Total Seconds' is a column name, not a request to sum when another operation exists.
-    operation_query = re.sub(r"\btotal seconds\b", "seconds", lowered)
-    operations = [name for name, pattern in OPERATIONS.items() if re.search(pattern, operation_query)]
-    if not operations and re.search(r"\btotal seconds\b", lowered):
-        operations = ["sum"]
-    if not operations:
-        raise ValueError("Specify min, max, average, sum or count.")
-    has_duration = bool(re.search(r"\b(duration|durations|dwell|seconds?|minutes?|hours?|engaged time)\b", lowered))
-    has_presses = bool(re.search(r"\b(press(?:es)?|interactions?|button presses)\b", lowered))
-    if has_duration and has_presses:
-        raise ValueError("Ask for one metric per request: duration or interactions. Multiple operations on that metric are supported.")
-    if has_presses and re.search(r"\b(?:and|,)\s+(?:total |count of )?sessions?\b", lowered):
-        raise ValueError("Ask for interactions and session counts in separate requests.")
-    metric = ("duration" if re.search(r"\b(duration|durations|dwell|seconds?|minutes?|hours?|engaged time)\b", lowered)
-              else "presses" if re.search(r"\b(press(?:es)?|interactions?|button presses)\b", lowered)
-              else "sessions" if re.search(r"\bsessions?\b", lowered)
-              else "runs" if re.search(r"\b(runs?|records?)\b", lowered)
-              else "exhibits" if re.search(r"\bexhibits?\b", lowered) else None)
-    if metric is None:
-        raise ValueError("Specify duration, presses/interactions, sessions, runs or exhibits.")
-    if metric in {"sessions", "runs", "exhibits"}:
-        if any(op not in {"count", "sum"} for op in operations):
-            raise ValueError("Use count or total for sessions, runs and exhibits.")
-        operations = ["count"]
+    operations, metric = calculation_intent(query)
     start, end = date_bounds(lowered, filters)
 
     rows, seen, entities = [], set(), {}
@@ -242,7 +217,7 @@ def calculate(query, points, filters=None, max_records=200_000):
             "unit": "records" if operation == "count" and metric in {"duration", "presses"} else unit,
             "records": len(values), "exhibits": sorted({row["name"] for row in extrema if row["name"]}),
             "evidence": evidence, "evidence_truncated": len(extrema) > 20,
-            "formula": f"{math.fsum(values):g} / {len(values)}" if operation == "average" else operation})
+            "formula": f"{display_number(math.fsum(values))} / {len(values):,}" if operation == "average" else operation})
     groups = []
     if re.search(r"\b(?:by|per|each)\s+exhibits?\b", lowered):
         for name in sorted({row["name"] for row in selected if row["name"]}):
@@ -250,10 +225,11 @@ def calculate(query, points, filters=None, max_records=200_000):
             group_values = [name] if metric == "exhibits" else [row["metrics"][metric] if metric in {"duration", "presses"} else 1 for row in group]
             groups.append({"exhibit": name, "records": len(group),
                            "metrics": {op: summary(op, group_values) for op in operations}})
-    answer = "; ".join(f"{item['operation'].title()} {metric}: {item['value']:g} {item['unit']}" for item in metrics)
+    answer = "; ".join(f"{item['operation'].title()} {metric}: {display_number(item['value'])} {item['unit']}" for item in metrics)
     response = {"query": query, "exact": True, "records": len(selected), "scope": scope,
         "sources": sorted({row["point"]["source"] for row in selected}), "metrics": metrics,
-        "groups": groups, "answer": answer + f". Calculated from {len(selected)} published structured records."}
+        "groups": groups, "answer": answer + f". Calculated from {len(selected):,} published structured records.",
+        "interpretation": f"Interpreted as {', '.join(operations)} of {metric}; visit/run durations are measured in seconds." if metric == "duration" else f"Interpreted as {', '.join(operations)} of {metric}."}
     if len(metrics) == 1:
         response.update({key: metrics[0][key] for key in ("operation", "field", "value", "exhibits")})
     return response
