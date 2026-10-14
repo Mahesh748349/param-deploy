@@ -1,38 +1,44 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Sparkles, Copy, Check, Loader2, Bot, AlertCircle, RefreshCw } from 'lucide-react';
 import { synthesizeEvidence } from '../api';
 
-export default function SynthesisPanel({ query, results }) {
+export default function SynthesisPanel({ query, results, filters }) {
+  const request = useRef(null);
   const [loading, setLoading] = useState(false);
   const [answer, setAnswer] = useState(null);
-  const [modelName, setModelName] = useState('Gemini 3.6 Flash');
-  const [isConfigured, setIsConfigured] = useState(true);
+  const [modelName, setModelName] = useState('Optional AI summary');
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(false);
 
-  const loadSynthesis = () => {
+  const loadSynthesis = useCallback(() => {
     if (!query || !results || results.length === 0) return;
     setLoading(true);
     setError(null);
+    setAnswer(null);
+    request.current?.abort();
+    const controller = new AbortController();
+    request.current = controller;
 
-    synthesizeEvidence({ query, text_results: results })
+    synthesizeEvidence({ query, filters, signal: controller.signal })
       .then((data) => {
+        if (controller.signal.aborted) return;
         setAnswer(data.summary || 'No answer generated.');
         if (data.model) {
           setModelName(data.model.replace(/^models\//, '').replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()));
         }
-        setIsConfigured(data.is_configured !== false);
         setLoading(false);
       })
       .catch((err) => {
+        if (controller.signal.aborted) return;
         setError(err.message || 'Failed to generate answer.');
         setLoading(false);
       });
-  };
+  }, [query, results, filters]);
 
   useEffect(() => {
     loadSynthesis();
-  }, [query, results]);
+    return () => request.current?.abort();
+  }, [loadSynthesis]);
 
   const handleCopy = () => {
     if (!answer) return;
@@ -95,7 +101,7 @@ export default function SynthesisPanel({ query, results }) {
         {loading ? (
           <div className="synthesis-loading">
             <Loader2 className="spinner text-indigo" size={18} />
-            <span>Gemini is analyzing the {results.length} retrieved records and formulating a direct answer...</span>
+            <span>Preparing a summary from retrieved evidence...</span>
           </div>
         ) : error ? (
           <div className="synthesis-error">
@@ -122,7 +128,7 @@ export default function SynthesisPanel({ query, results }) {
 
       <div className="synthesis-footer">
         <Bot size={13} className="text-muted" />
-        <span>Grounded strictly on the {results.length} relevant rows retrieved from your Qdrant index.</span>
+        <span>Summaries use retrieved evidence. Dataset calculations are handled separately.</span>
       </div>
     </div>
   );

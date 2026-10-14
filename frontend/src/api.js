@@ -11,9 +11,6 @@ async function getAuthHeaders() {
       if (session?.access_token) {
         headers['Authorization'] = `Bearer ${session.access_token}`;
       }
-      if (session?.user?.email) {
-        headers['X-User-Email'] = session.user.email.toLowerCase().trim();
-      }
     }
   } catch (err) {
     console.warn('[API] Auth header resolution warning:', err);
@@ -46,23 +43,25 @@ export async function checkHealth() {
   return parseJsonResponse(res, 'Health check failed');
 }
 
-export async function retrieveQuery({ query, top_k = 5, scope = 'text' }) {
+export async function retrieveQuery({ query, top_k = 5, scope = 'text', filters, signal }) {
   const headers = await getAuthHeaders();
   const res = await fetch(`${API_BASE}/api/retrieve`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ query, top_k, scope })
+    body: JSON.stringify({ query, top_k, scope, filters }),
+    signal
   });
 
   return parseJsonResponse(res, 'Search retrieval request failed');
 }
 
-export async function synthesizeEvidence({ query, text_results }) {
+export async function synthesizeEvidence({ query, filters, signal }) {
   const headers = await getAuthHeaders();
   const res = await fetch(`${API_BASE}/api/synthesize`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ query, text_results })
+    body: JSON.stringify({ query, filters }),
+    signal
   });
 
   return parseJsonResponse(res, 'AI synthesis request failed');

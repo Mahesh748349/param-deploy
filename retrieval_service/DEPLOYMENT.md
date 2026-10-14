@@ -47,6 +47,8 @@ If API and worker are on different machines, both need the same private S3-compa
 
 For existing text search only, snapshot bytes are not read: text and metadata are already in Qdrant. But do not enable ingestion/rebuild workflows until shared snapshot storage is configured and the existing snapshots have been transferred. Images return private blob IDs; serving actual images is a separate asset integration.
 
+The corrected `/v1/aggregate` endpoint also reads indexed structured payloads, so analytics does not require local snapshot copies. Updating sources, rebuilding indexes and serving images still require persistent shared snapshot storage.
+
 ## 4. Start the service
 
 From the bundle root, with environment settings applied:

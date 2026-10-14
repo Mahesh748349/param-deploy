@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import Header from './components/Header';
 import SearchBar from './components/SearchBar';
 import ResultStats from './components/ResultStats';
@@ -10,7 +10,7 @@ import AuthModal from './components/AuthModal';
 import AnalyticsMetricsCard from './components/AnalyticsMetricsCard';
 import { useAuth } from './context/AuthContext';
 import { checkHealth, retrieveQuery } from './api';
-import { Search, Shield, Lock, Sparkles, CheckCircle2, AlertCircle, Info, Database, ChevronDown, ChevronUp, FileText } from 'lucide-react';
+import { Search, Shield, CheckCircle2, AlertCircle, Info, Database, ChevronDown, ChevronUp, FileText } from 'lucide-react';
 import './App.css';
 
 export default function App() {
@@ -21,6 +21,8 @@ export default function App() {
   const [scope, setScope] = useState('text');
   const [results, setResults] = useState([]);
   const [meta, setMeta] = useState(null);
+  const [submittedQuery, setSubmittedQuery] = useState('');
+  const searchController = useRef(null);
   const [isAnalyticalMode, setIsAnalyticalMode] = useState(false);
   const [showRawFiles, setShowRawFiles] = useState(true);
 
@@ -95,7 +97,7 @@ export default function App() {
   };
 
   // Search Handler
-  const handleSearch = async (searchQuery = query) => {
+  const handleSearch = async (searchQuery = query, filterOverrides = {}) => {
     const trimmed = searchQuery.trim();
     if (!trimmed) return;
 
@@ -110,6 +112,20 @@ export default function App() {
     setError(null);
     setNotice(null);
     setIsSpinningUp(false);
+    searchController.current?.abort();
+    const controller = new AbortController();
+    searchController.current = controller;
+    setResults([]);
+    setMeta(null);
+    const sheet = filterOverrides.sheet ?? selectedSheet;
+    const file = filterOverrides.file ?? selectedFile;
+    const exhibit = filterOverrides.exhibit ?? selectedExhibit;
+    const filters = {};
+    if (file) filters.source = file;
+    if (exhibit) filters.exhibit = exhibit;
+    if (sheet === 'Engagement Sheet') filters.source = 'engagement-sessions-2026-09-15.csv';
+    else if (sheet === 'Executive Report Sheet') filters.source = 'engagement-report-2026-09-15.pdf';
+    else if (sheet && sheet !== 'Result Sheet') filters.sheet = sheet;
 
     // Warm-up timeout indicator for Render
     const spinTimer = setTimeout(() => {
@@ -120,8 +136,12 @@ export default function App() {
       const data = await retrieveQuery({
         query: trimmed,
         top_k: topK,
-        scope
+        scope,
+        filters,
+        signal: controller.signal
       });
+      if (controller.signal.aborted) return;
+      setSubmittedQuery(trimmed);
 
       clearTimeout(spinTimer);
       setIsSpinningUp(false);
@@ -144,7 +164,7 @@ export default function App() {
       }
 
       // Automatically open AI Answer & Data Analysis panel for analytical or question queries
-      const isAnalyticalQuery = /^(what|how|which|why|who|when|calculate|find|tell|is|are|min|max|average|avg|highest|lowest|sum|total|median|compare)/i.test(trimmed);
+      const isAnalyticalQuery = Boolean(data._aggregate);
       setIsAnalyticalMode(isAnalyticalQuery);
       // For analytical questions, hide raw files and show dedicated analytics card rather than AI analysis dump
       setShowRawFiles(!isAnalyticalQuery);
@@ -159,72 +179,40 @@ export default function App() {
 
       refreshHealth();
     } catch (err) {
+      if (controller.signal.aborted) return;
       clearTimeout(spinTimer);
       setIsSpinningUp(false);
       setResults([]); // Explicitly clear any stale or fallback results
       setError(err.message || 'Not retrieved: The request took too long or failed.');
       console.error('Retrieve error:', err);
     } finally {
-      setLoading(false);
+      clearTimeout(spinTimer);
+      if (searchController.current === controller) setLoading(false);
     }
   };
 
   const handleSheetChange = (sheet) => {
     setSelectedSheet(sheet);
-    if (sheet) {
-      if (sheet === 'Engagement Sheet') {
-        const hasRows = (results || []).some(r => (r.source || '').includes('engagement-sessions') || (r.locator || '').includes('engagement') || (r.text || '').includes('duration_s'));
-        if (!hasRows) {
-          setQuery('visitor engagement sessions');
-          handleSearch('visitor engagement sessions');
-        }
-      } else if (sheet === 'Result Sheet') {
-        // Active query results table - keep current results
-      } else if (sheet === 'Executive Report Sheet') {
-        const hasRows = (results || []).some(r => (r.source || '').includes('engagement-report') || (r.text || '').includes('executive') || (r.text || '').includes('report'));
-        if (!hasRows) {
-          setQuery('executive engagement report summary');
-          handleSearch('executive engagement report summary');
-        }
-      } else {
-        // Kinetic Bug or Kinetic Flower
-        const hasRows = (results || []).some(r => {
-          const loc = (r.locator || '').toLowerCase();
-          const attr = (r.attributes?.sheet || '').toLowerCase();
-          const txt = (r.text || '').toLowerCase();
-          return loc.includes(sheet.toLowerCase()) || attr.includes(sheet.toLowerCase()) || txt.includes(sheet.toLowerCase());
-        });
-        if (!hasRows) {
-          setQuery(sheet);
-          handleSearch(sheet);
-        }
-      }
-    }
+    handleSearch(submittedQuery || query, { sheet });
   };
-
   const handleExhibitChange = (exhibit) => {
     setSelectedExhibit(exhibit);
-    if (exhibit) {
-      const hasRows = (results || []).some(r => {
-        const name = (r.attributes?.display_name || r.attributes?.exhibit_id || '').toLowerCase();
-        return name.includes(exhibit.toLowerCase());
-      });
-      if (!hasRows) {
-        setQuery(exhibit);
-        handleSearch(exhibit);
-      }
-    }
+    handleSearch(submittedQuery || query, { exhibit });
   };
-
+  const handleFileChange = (file) => {
+    setSelectedFile(file);
+    handleSearch(submittedQuery || query, { file });
+  };
   const handleResetFilters = () => {
     setSelectedSheet('');
     setSelectedFile('');
     setSelectedExhibit('');
     setSortField('duration');
     setSortOrder('asc');
+    handleSearch(submittedQuery || query, { sheet: '', file: '', exhibit: '' });
   };
 
-  const filteredResults = (results || []).filter((r) => {
+  const filteredResults = useMemo(() => (results || []).filter((r) => {
     const attrs = r.attributes || {};
 
     // 1. Sheet Filter
@@ -264,7 +252,7 @@ export default function App() {
     }
 
     return true;
-  });
+  }), [results, selectedSheet, selectedFile, selectedExhibit]);
 
   const dataRows = (filteredResults || []).map((r, idx) => {
     const attrs = r.attributes || {};
@@ -466,18 +454,19 @@ export default function App() {
 
         {/* AI Answer Synthesis Box */}
         {showSynthesis && results.length > 0 && (
-          <SynthesisPanel query={query} results={filteredResults} />
+          <SynthesisPanel query={submittedQuery} results={filteredResults} filters={meta?.filters} />
         )}
 
         {/* Results */}
-        {results.length > 0 ? (
+        {results.length > 0 || meta?._aggregate ? (
           <div className="results-section">
             <ResultStats
+              results={results}
               meta={meta}
               selectedSheet={selectedSheet}
               setSelectedSheet={handleSheetChange}
               selectedFile={selectedFile}
-              setSelectedFile={setSelectedFile}
+              setSelectedFile={handleFileChange}
               selectedExhibit={selectedExhibit}
               setSelectedExhibit={handleExhibitChange}
               onResetFilters={handleResetFilters}
@@ -495,8 +484,8 @@ export default function App() {
             {/* Dedicated Telemetry Analytics & Whole Dataset Metrics Card */}
             {isAnalyticalMode && (
               <AnalyticsMetricsCard
-                analytics={meta?._dataset_analytics}
-                query={query}
+                analytics={meta?._aggregate}
+                query={submittedQuery}
                 dataRows={sortedDataRows}
               />
             )}
@@ -507,12 +496,12 @@ export default function App() {
                 <div className="telemetry-table-header">
                   <div className="telemetry-table-title-group">
                     <Database size={16} className="text-indigo" />
-                    <h3 className="telemetry-table-title">Exhibit Telemetry Session Records</h3>
+                    <h3 className="telemetry-table-title">Retrieved sample records</h3>
                     <span className="telemetry-count-badge">
                       Sorted: {sortOrder === 'asc' ? '↑ Ascending (Min at top)' : '↓ Descending (Max at top)'} ({sortedDataRows.length} Rows)
                     </span>
                   </div>
-                  <span className="telemetry-table-sub">Click column headers or use controls above to sort</span>
+                  <span className="telemetry-table-sub">Sorting this sample does not establish dataset-wide extremes</span>
                 </div>
 
                 <div className="table-responsive">
@@ -551,7 +540,7 @@ export default function App() {
             )}
 
             {/* For questions, provide a clean toggle so file cards don't clutter the data */}
-            {isAnalyticalMode && (
+            {isAnalyticalMode && filteredResults.length > 0 && (
               <div className="raw-files-toggle-wrapper">
                 <button
                   type="button"
@@ -573,7 +562,7 @@ export default function App() {
                     key={item.id || index}
                     result={item}
                     rank={index + 1}
-                    searchQuery={query}
+                    searchQuery={submittedQuery}
                   />
                 ))}
               </div>

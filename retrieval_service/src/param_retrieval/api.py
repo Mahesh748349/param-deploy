@@ -1,15 +1,20 @@
 import secrets
 import tempfile
+import mimetypes
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, UploadFile
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from .config import Settings
 from .service import Service
 from .state import StaleEvent
 from .filters import SearchFilters
+from .parsers import IMAGE_SUFFIXES
+from .analytics import AggregateFilters
 
 
 class RetrievalRequest(BaseModel):
@@ -17,6 +22,11 @@ class RetrievalRequest(BaseModel):
     top_k: int = Field(5, ge=1, le=50)
     scope: str = Field("text", pattern="^(text|image|all)$")
     filters: SearchFilters | None = None
+
+
+class AggregateRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=4000)
+    filters: AggregateFilters | None = None
 
 
 class RecordUpdate(BaseModel):
@@ -64,9 +74,10 @@ def create_app(service=None):
             svc.state.status(cfg.index_id)
             # A lightweight query confirms configured collections and connectivity.
             svc.store.search("text", [1.0] + [0.0] * (cfg.text_dimension - 1), cfg.dataset, cfg.index_id, 1)
+            published_sources = len(svc.state.active_sources(cfg.dataset, cfg.index_id))
         except Exception:
             raise HTTPException(503, "Storage is unavailable")
-        return {"status": "ready", "index_id": cfg.index_id}
+        return {"status": "ready", "index_id": cfg.index_id, "published_sources": published_sources}
 
     @app.post("/v1/retrieve", dependencies=[read_access])
     def retrieve(body: RetrievalRequest):
@@ -74,6 +85,32 @@ def create_app(service=None):
             return svc.retrieve(body.query, body.top_k, body.scope, filters=body.filters)
         except ValueError as exc:
             raise HTTPException(422, str(exc))
+
+    @app.post("/v1/aggregate", dependencies=[read_access])
+    def aggregate(body: AggregateRequest):
+        try:
+            return svc.aggregate(body.query, body.filters)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc))
+        except RuntimeError as exc:
+            raise HTTPException(409, str(exc))
+
+    @app.get("/v1/blobs/{blob_id}", dependencies=[read_access])
+    def image_blob(blob_id: str):
+        if not re.fullmatch(r"[a-f0-9]{64}", blob_id):
+            raise HTTPException(404, "Image not found")
+        suffix = svc.state.active_image_suffix(blob_id, cfg.dataset, cfg.index_id)
+        if suffix not in IMAGE_SUFFIXES:
+            raise HTTPException(404, "Image not found")
+
+        def stream_image():
+            with svc.blobs.materialize(blob_id, suffix) as path:
+                with path.open("rb") as source:
+                    while block := source.read(1024 * 1024):
+                        yield block
+
+        return StreamingResponse(stream_image(), media_type=mimetypes.guess_type("image" + suffix)[0],
+            headers={"Cache-Control": "private, max-age=300", "X-Content-Type-Options": "nosniff"})
 
     @app.post("/v1/files", dependencies=[write_access], status_code=202)
     def ingest_file(file: UploadFile = File(...), source: str = Query(min_length=1, max_length=1000),

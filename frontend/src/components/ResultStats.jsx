@@ -14,16 +14,16 @@ import {
 } from 'lucide-react';
 
 const DATASET_SHEETS = [
-  { id: 'Engagement Sheet', label: 'Engagement Sheet', file: 'engagement-sessions-2026-09-15.csv', count: '22,722 sessions' },
+  { id: 'Engagement Sheet', label: 'Engagement Sheet', file: 'engagement-sessions-2026-09-15.csv', count: 'Indexed sessions' },
   { id: 'Result Sheet', label: 'Result Sheet', file: 'Query Results Table', count: 'Active search hits' },
-  { id: 'Kinetic Bug', label: 'Kinetic Bug', file: 'Physical Exhibit.xlsx', count: '32 runs' },
-  { id: 'Kinetic Flower', label: 'Kinetic Flower', file: 'Physical Exhibit.xlsx', count: '32 runs' },
+  { id: 'Kinetic Bug', label: 'Kinetic Bug', file: 'Physical Exhibit.xlsx', count: 'Workbook sheet' },
+  { id: 'Kinetic Flower', label: 'Kinetic Flower', file: 'Physical Exhibit.xlsx', count: 'Workbook sheet' },
   { id: 'Executive Report Sheet', label: 'Executive Report Sheet', file: 'engagement-report-2026-09-15.pdf', count: 'Benchmark report' }
 ];
 
 const DATASET_FILES = [
-  { id: 'engagement-sessions-2026-09-15.csv', label: 'engagement-sessions-2026-09-15.csv', count: '22,722 sessions' },
-  { id: 'Physical Exhibit.xlsx', label: 'Physical Exhibit.xlsx', count: '64 runs (2 sheets)' },
+  { id: 'engagement-sessions-2026-09-15.csv', label: 'engagement-sessions-2026-09-15.csv', count: 'Indexed sessions' },
+  { id: 'Physical Exhibit.xlsx', label: 'Physical Exhibit.xlsx', count: 'Indexed workbook' },
   { id: 'engagement-report-2026-09-15.pdf', label: 'engagement-report-2026-09-15.pdf', count: 'Executive report' }
 ];
 
@@ -52,6 +52,7 @@ const DATASET_EXHIBITS = [
 ];
 
 export default function ResultStats({
+  results = [],
   meta,
   selectedSheet = '',
   setSelectedSheet,
@@ -72,6 +73,19 @@ export default function ResultStats({
 }) {
   const [openDropdown, setOpenDropdown] = useState(null); // 'sheet' | 'file' | 'exhibit' | 'metric' | 'order' | null
   const containerRef = useRef(null);
+  const fileOptions = [...new Set([...DATASET_FILES.map(item => item.id),
+    ...results.map(item => item.source), ...(meta?._aggregate?.sources || [])])]
+    .filter(Boolean).map(id => ({ id, label: id, count: 'Source file' }));
+  const sheetOptions = [...DATASET_SHEETS];
+  const exhibitOptions = new Set(DATASET_EXHIBITS);
+  for (const hit of results) {
+    const sheet = hit.locator?.match(/^sheet:(.*?)\|row:/)?.[1];
+    if (sheet && !sheetOptions.some(item => item.id === sheet)) {
+      sheetOptions.push({ id: sheet, label: sheet, file: hit.source, count: 'Workbook sheet' });
+    }
+    const name = hit.attributes?.display_name || hit.attributes?.exhibit_id || hit.attributes?.exhibit || sheet;
+    if (name) exhibitOptions.add(name);
+  }
 
   // Close dropdown on outside click or Escape
   useEffect(() => {
@@ -103,13 +117,13 @@ export default function ResultStats({
       <div className="results-header-bar">
         <div className="results-meta-left">
           <span className="results-count">
-            <strong>{totalResultsCount}</strong> {totalResultsCount === 1 ? 'result' : 'results'}
+            <strong>{meta?._aggregate ? meta._aggregate.records : totalResultsCount}</strong> {meta?._aggregate ? 'matching records' : totalResultsCount === 1 ? 'result' : 'results'}
           </span>
           {meta?.image_results?.length > 0 && (
             <span className="image-count-pill">{meta.image_results.length} images</span>
           )}
           {meta?._cutoff_applied && (
-            <span className="cutoff-pill" title="Low-relevance items filtered out (rerank cutoff >= 0.0)">Cutoff Applied</span>
+            <span className="cutoff-pill" title="The retrieval service applied its configured relevance cutoff">Cutoff Applied</span>
           )}
           {meta?._latency_ms && (
             <span className="results-latency">({meta._latency_ms}ms)</span>
@@ -123,6 +137,7 @@ export default function ResultStats({
           {/* AI Answer Synthesis */}
           <button
             type="button"
+            disabled={Boolean(meta?._aggregate)}
             className={`action-btn ${showSynthesis ? 'active' : ''}`}
             onClick={() => setShowSynthesis(!showSynthesis)}
           >
@@ -174,7 +189,7 @@ export default function ResultStats({
                 <span>All Sheets</span>
                 {!selectedSheet && <Check size={14} className="text-emerald" />}
               </button>
-              {DATASET_SHEETS.map(sh => (
+              {sheetOptions.map(sh => (
                 <button
                   key={sh.id}
                   type="button"
@@ -224,7 +239,7 @@ export default function ResultStats({
                 <span>All Files</span>
                 {!selectedFile && <Check size={14} className="text-emerald" />}
               </button>
-              {DATASET_FILES.map(f => (
+              {fileOptions.map(f => (
                 <button
                   key={f.id}
                   type="button"
@@ -274,7 +289,7 @@ export default function ResultStats({
                 <span>All Exhibits</span>
                 {!selectedExhibit && <Check size={14} className="text-emerald" />}
               </button>
-              {DATASET_EXHIBITS.map(ex => (
+              {[...exhibitOptions].map(ex => (
                 <button
                   key={ex}
                   type="button"

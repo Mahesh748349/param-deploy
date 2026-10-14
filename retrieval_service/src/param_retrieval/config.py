@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     lease_seconds: int = Field(180, ge=15)
     max_attempts: int = Field(5, ge=1)
     max_file_mb: int = Field(100, ge=1)
+    aggregate_max_records: int = Field(200_000, ge=1)
     chunk_chars: int = Field(1000, ge=100, le=1600)
     chunk_overlap: int = Field(100, ge=0, le=99_999)
     pipeline_version: str = "3.0-hybrid"

@@ -119,6 +119,18 @@ class QdrantStore:
     def close(self):
         self.client.close()
 
+    def iter_records(self, dataset, index_id):
+        """Read complete text payloads, without embeddings or a top-k limit."""
+        offset = None
+        while True:
+            points, offset = self.client.scroll(self.name("text"),
+                scroll_filter=self.scope_filter(dataset, index_id), limit=256,
+                offset=offset, with_payload=True, with_vectors=False)
+            for point in points:
+                yield {**point.payload, "id": str(point.id)}
+            if offset is None:
+                break
+
 
 class PgVectorStore:
     def __init__(self, settings):
@@ -237,6 +249,21 @@ class PgVectorStore:
                 "ORDER BY score DESC, id LIMIT :n"),
                 {"query": " OR ".join(words), "d": dataset, "i": index_id, "n": limit, **params}).mappings()
             return [{**row["payload"], "id": str(row["id"]), "score": float(row["score"])} for row in rows]
+
+    def iter_records(self, dataset, index_id):
+        from sqlalchemy import text
+        last = "00000000-0000-0000-0000-000000000000"
+        while True:
+            with self.engine.connect() as conn:
+                rows = conn.execute(text(f"SELECT id,payload FROM {self.name('text')} "
+                    "WHERE dataset=:d AND index_id=:i AND active=true "
+                    "AND id>CAST(:last AS uuid) ORDER BY id LIMIT 256"),
+                    {"d": dataset, "i": index_id, "last": last}).mappings().all()
+            if not rows:
+                break
+            for row in rows:
+                yield {**row["payload"], "id": str(row["id"])}
+            last = str(rows[-1]["id"])
 
 
 VECTOR_ADAPTERS = {"qdrant": QdrantStore, "pgvector": PgVectorStore}

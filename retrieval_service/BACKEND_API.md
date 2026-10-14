@@ -47,7 +47,25 @@ Example response (illustrative, not a captured response):
 
 Text retrieval is dense + lexical search with reciprocal-rank fusion. Scores are NOT confidence percentages; do not apply cosine thresholds to RRF scores. A hit may occur in one or both branches. Image results use cosine similarity and appear separately under image_results. Only requested result lists are present. There can be fewer than top_k hits, or an empty list. candidate_limit_reached indicates candidate filtering hit its expansion cap. blob_id is private provenance, not a public image URL.
 
-No final LLM generation or numerical analytics is performed. Your backend may use evidence directly or pass it to its own LLM, treating retrieved text as untrusted input. Relevant rows are not guaranteed to be numerical maxima, totals or averages.
+`/v1/retrieve` performs retrieval, without final LLM generation or numerical analytics. Your backend may use evidence directly or pass it to its own LLM, treating retrieved text as untrusted input. Relevant rows are not guaranteed to be numerical maxima, totals or averages.
+
+## Complete-data calculations
+
+`POST /v1/aggregate` uses the same retrieval bearer key. Example:
+
+```json
+{"query":"min max average sum dwell duration across all sessions","filters":{"source":"engagement-sessions-2026-09-15.csv"}}
+```
+
+This scans published structured row payloads in the vector store, validates their revisions against PostgreSQL, deduplicates split chunks from the same row, and computes numeric values independently of `top_k`. It needs no snapshot files or model inference. No re-ingestion is needed for existing indexed records.
+
+Supported operations: min, max, average, sum and count, including several operations on one metric. Metrics: duration (normalized to seconds), presses/interactions, session/run counts, unique exhibit counts. `by exhibit` adds per-exhibit calculations. Workbook sheet names identify physical exhibits.
+
+Optional filters: source, sheet, exhibit, date_from and date_to (YYYY-MM-DD). Named month/year and inclusive ISO date ranges are supported in the query. Dates use the source calendar date of the session/run start, without guessing a timezone. Missing scoped dates make a date-filtered calculation fail explicitly. Unknown scopes and unsupported conditions return 422. If publication changes during a scan, return 409 and retry.
+
+Responses include `exact`, `records`, `scope`, `sources`, `metrics`, and min/max source evidence. An empty scope returns `exact:false`, not a fabricated zero. Exactness means arithmetic over the complete matching published structured rows; it does not certify input-data accuracy. Repeated records in different source files are distinct records. PDF report prose is searchable but is not parsed into structured numeric rows by this endpoint.
+
+`PARAM_AGGREGATE_MAX_RECORDS` bounds each scan (default 200,000). This is suitable for the current dataset; large-scale frequent analytics should use a dedicated structured SQL table/materialized views. Workers and snapshot storage are still required for ingestion, rebuilding and image assets.
 
 ## Errors and health
 

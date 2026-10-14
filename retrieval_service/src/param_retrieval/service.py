@@ -200,6 +200,24 @@ class Service:
             response["processed"] = self.postprocessor(query, response)
         return response
 
+    def aggregate(self, query, filters=None):
+        from .analytics import calculate
+        sources = self.state.active_sources(self.settings.dataset, self.settings.index_id)
+        active = {source["id"]: source["revision"] for source in sources}
+        # One publication snapshot prevents mixing old and new source revisions.
+        points = (point for point in self.store.iter_records(
+            self.settings.dataset, self.settings.index_id)
+            if active.get(point["doc_id"]) == point["revision"])
+        response = calculate(query, points, filters, self.settings.aggregate_max_records)
+        response.update(dataset=self.settings.dataset, index_id=self.settings.index_id)
+        # If an update published during the scan, ask the caller to retry rather
+        # than returning an incomplete or mixed calculation as exact.
+        current = {source["id"]: source["revision"] for source in self.state.active_sources(
+            self.settings.dataset, self.settings.index_id)}
+        if current != active:
+            raise RuntimeError("Data changed during calculation; retry the request.")
+        return response
+
     def close(self):
         self.store.close()
         self.state.close()
