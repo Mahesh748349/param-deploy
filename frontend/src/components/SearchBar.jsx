@@ -3,10 +3,10 @@ import { Search, X, ArrowRight, Loader2, Clock } from 'lucide-react';
 
 const SUGGESTIONS = [
   "visitor interactions involving color perception",
-  "chromatic contrast puzzle latency and feedback",
-  "optical illusion station peripheral color fading",
-  "retinal adaptation threshold under low-lumen conditions",
-  "trichromatic synthesis RGB slider matching speed"
+  "Kinetic Bug exhibit usage and session durations",
+  "engagement report interactions sessions engaged time",
+  "min max average duration for Kinetic Bug",
+  "total interactions across all sessions"
 ];
 
 export default function SearchBar({
@@ -97,17 +97,17 @@ export default function SearchBar({
         {/* Options Row */}
         <div className="search-options-row">
           <div className="option-item">
-            <label htmlFor="top-k-select" className="option-label">Results count:</label>
+            <label htmlFor="top-k-select" className="option-label">Maximum results:</label>
             <select
               id="top-k-select"
               value={topK}
               onChange={(e) => setTopK(parseInt(e.target.value, 10))}
               className="option-select"
             >
-              <option value="3">Top 3</option>
-              <option value="5">Top 5 (Recommended)</option>
-              <option value="10">Top 10</option>
-              <option value="20">Top 20</option>
+              <option value="3">Up to 3</option>
+              <option value="5">Up to 5</option>
+              <option value="10">Up to 10</option>
+              <option value="20">Up to 20</option>
             </select>
           </div>
 
