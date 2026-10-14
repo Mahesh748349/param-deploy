@@ -18,6 +18,7 @@ export default function AnalyticsMetricsCard({ analytics }) {
       </div>
       <p>{filters.length ? filters.join(' · ') : 'All matching structured records in the active index'}</p>
       <p>{analytics.answer}</p>
+      {analytics.interpretation && <p>{analytics.interpretation}</p>}
       <div className="kpi-grid">
         {metrics.map(item => (
           <div className="kpi-card" key={item.operation}>
