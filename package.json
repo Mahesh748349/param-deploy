@@ -1,0 +1,16 @@
+{
+  "name": "param-retrieval-system",
+  "version": "1.0.0",
+  "description": "Full-stack application (frontend + backend proxy) for Param Retrieval Service",
+  "scripts": {
+    "build": "npm run build --prefix frontend",
+    "dev": "concurrently -n \"backend,frontend\" -c \"blue,magenta\" \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\"",
+    "dev:backend": "npm run dev --prefix backend",
+    "dev:frontend": "npm run dev --prefix frontend",
+    "start:backend": "npm start --prefix backend",
+    "build:frontend": "npm run build --prefix frontend"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

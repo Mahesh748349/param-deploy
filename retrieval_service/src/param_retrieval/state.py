@@ -193,7 +193,7 @@ class State:
 
     def active_sources(self, dataset, index_id):
         with self.engine.connect() as conn:
-            rows = conn.execute(select(documents.c.id, documents.c.source, jobs.c.blob, jobs.c.suffix)
+            rows = conn.execute(select(documents.c.id, documents.c.source, documents.c.active.label("revision"), jobs.c.blob, jobs.c.suffix)
                 .join(jobs, and_(jobs.c.token == documents.c.active, jobs.c.doc_id == documents.c.id))
                 .where(documents.c.dataset == dataset, documents.c.index_id == index_id,
                        documents.c.active.is_not(None), jobs.c.status == "complete", jobs.c.blob.is_not(None)))

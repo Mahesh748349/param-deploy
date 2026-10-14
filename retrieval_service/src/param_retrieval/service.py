@@ -1,8 +1,6 @@
 import itertools
 import json
 import logging
-import math
-import re
 import tempfile
 import threading
 import time
@@ -202,106 +200,23 @@ class Service:
             response["processed"] = self.postprocessor(query, response)
         return response
 
-    def aggregate(self, query):
-        """Calculate exact aggregates over active structured records, not top-k search hits."""
-        lowered = query.casefold()
-        operation = next((name for pattern, name in (
-            (r"\b(min|minim(?:um|ize))\b", "min"),
-            (r"\b(max|maxim(?:um|ize))\b", "max"),
-            (r"\b(avg|average|mean)\b", "average"),
-            (r"\b(sum|total)\b", "sum"),
-            (r"\b(count|how many)\b", "count"),
-        ) if re.search(pattern, lowered)), None)
-        if not operation:
-            raise ValueError("Specify min, max, average, sum, or count.")
-
-        field_terms = []
-        if re.search(r"\b(duration|dwell|seconds?|minutes?|hours?|engaged time)\b", lowered):
-            field_terms = ["duration", "dwell", "engaged", "hours", "seconds"]
-        elif re.search(r"\b(press(?:es)?|interaction(?:s)?)\b", lowered):
-            field_terms = ["press", "interaction"]
-        elif re.search(r"\bsessions?\b", lowered):
-            field_terms = ["session"]
-        if not field_terms:
-            raise ValueError("Specify a supported numeric field such as duration, presses, or sessions.")
-
-        rows = []
-        entities = set()
-        seen_rows = set()
+    def aggregate(self, query, filters=None):
+        from .analytics import calculate
         sources = self.state.active_sources(self.settings.dataset, self.settings.index_id)
-        for source in sources:
-            if source["suffix"] not in PARSERS:
-                continue
-            with self.blobs.materialize(source["blob"], source["suffix"]) as path:
-                for chunk in parse(path, source["suffix"], self.settings):
-                    row_key = (source["id"], chunk.locator.split("|char:", 1)[0])
-                    if row_key in seen_rows:
-                        continue
-                    seen_rows.add(row_key)
-                    attrs = chunk.attributes or {}
-                    entity_value = next((attrs[key] for key in ("display_name", "exhibit", "exhibit_id")
-                                         if attrs.get(key)), None)
-                    entity_name = str(entity_value).strip() if entity_value is not None else None
-                    entity = (entity_name.casefold().replace("_", " ").replace("-", " ")
-                              if entity_name else None)
-                    if entity:
-                        entities.add(entity)
-                    rows.append((entity, entity_name, attrs))
-
-        query_words = set(re.findall(r"[a-z0-9]+", lowered))
-        requested_entities = {entity for entity in entities
-            if set(re.findall(r"[a-z0-9]+", entity)).issubset(query_words)}
-        entity_phrase = re.search(r"\b(?:for|of)\s+(.+?)\s+(?:exhibit|station)\b", lowered)
-        if entity_phrase:
-            requested = re.sub(r"[^a-z0-9 ]", " ", entity_phrase.group(1)).strip()
-            requested = re.sub(r"^(?:the|a|an)\s+", "", requested)
-            requested_entities = {entity for entity in entities if entity == requested}
-            if not requested_entities:
-                return {"query": query, "answer": "I don't know: no matching numeric records were found."}
-        values_by_field = {}
-        for entity, entity_name, attrs in rows:
-            if requested_entities and entity not in requested_entities:
-                continue
-            for key, value in attrs.items():
-                normalized_key = re.sub(r"[^a-z0-9]", "", key.casefold())
-                if not any(term in normalized_key for term in field_terms):
-                    continue
-                if isinstance(value, bool):
-                    continue
-                try:
-                    number = float(str(value).replace(",", "").strip())
-                except (TypeError, ValueError):
-                    continue
-                if not math.isfinite(number):
-                    continue
-                values_by_field.setdefault(key, []).append((number, entity_name))
-
-        if not values_by_field:
-            return {"query": query, "answer": "I don't know: no matching numeric records were found."}
-        selected_field = min(values_by_field,
-            key=lambda key: (next((index for index, term in enumerate(field_terms)
-                                   if term in re.sub(r"[^a-z0-9]", "", key.casefold())), len(field_terms)),
-                             -len(values_by_field[key])))
-        field_values = values_by_field[selected_field]
-        values = [number for number, _ in field_values]
-        if operation == "min":
-            result = min(values)
-        elif operation == "max":
-            result = max(values)
-        elif operation == "average":
-            result = sum(values) / len(values)
-        elif operation == "sum":
-            result = sum(values)
-        else:
-            result = len(values)
-        matching_exhibits = sorted({name for number, name in field_values
-                                    if operation == "max" and number == result and name})
-        exhibit_note = (f" Recorded at: {', '.join(matching_exhibits)}."
-                        if matching_exhibits else " No exhibit name was present on the matching records.")
-        return {"query": query, "operation": operation, "field": selected_field,
-                "value": result, "records": len(values), "exact": True,
-                "exhibits": matching_exhibits,
-                "answer": f"{operation.title()} {selected_field}: {result:g} (calculated from {len(values)} active records).{exhibit_note}"}
+        active = {source["id"]: source["revision"] for source in sources}
+        # One publication snapshot prevents mixing old and new source revisions.
+        points = (point for point in self.store.iter_records(
+            self.settings.dataset, self.settings.index_id)
+            if active.get(point["doc_id"]) == point["revision"])
+        response = calculate(query, points, filters, self.settings.aggregate_max_records)
+        response.update(dataset=self.settings.dataset, index_id=self.settings.index_id)
+        # If an update published during the scan, ask the caller to retry rather
+        # than returning an incomplete or mixed calculation as exact.
+        current = {source["id"]: source["revision"] for source in self.state.active_sources(
+            self.settings.dataset, self.settings.index_id)}
+        if current != active:
+            raise RuntimeError("Data changed during calculation; retry the request.")
+        return response
 
     def close(self):
         self.store.close()
