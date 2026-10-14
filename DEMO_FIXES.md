@@ -47,3 +47,13 @@ The real CSV regression checks 22,722 sessions, maximum 1,804.9 seconds, sum 3,8
 These checks apply to the supplied original files. Updated published data must produce updated values rather than retain these benchmarks.
 
 After deployment: authenticate, check `/api/ready`, run the known maximum query and the Kinetic Bug/date/count tests, and verify the website and `/v1/aggregate` agree. Local verification does not establish live-cloud correctness.
+
+## Follow-up: unrelated questions and result limits
+
+The website backend now applies a Param dataset-scope policy to search and summary requests. Clear unrelated questions (pizza/pasta recipes, chess rules, general coding tutorials) return empty results and a no-supported-answer notice. Instruction questions require an actual instruction document; a station name in a question does not turn telemetry into instructions. This lightweight policy uses configured topic terms and retrieved station/source aliases. It is a conservative heuristic, not a universal semantic classifier: it can reject new legitimate subjects until the configured terms are extended.
+
+Gemini summaries must return an answerability decision and supporting record citations. Citation indexes and verbatim supporting quotes are checked against server-retrieved records. Unsupported responses or invalid citations produce abstention. Citation checks improve grounding but do not mathematically prove every generated claim. Missing Gemini/outages still show clearly labelled excerpts rather than a generated answer.
+
+`top_k` is a maximum result count. It does not measure relevance. RRF values are rank-fusion scores, not probabilities, so an arbitrary RRF cutoff can retain unrelated top-ranked neighbours and discard useful keyword matches. The existing reranker supports a separately calibrated `PARAM_RERANK_MIN_SCORE` (see `calibrate_reranker.py`). Do not enable the previously memory-heavy reranker on the 512 MB host without capacity testing. No numeric threshold has been selected by these follow-up changes: that needs labelled in-domain, paraphrased, ambiguous and out-of-domain validation queries. Domain checks and answerability checks serve different purposes from a score cutoff.
+
+Deployment for this follow-up: merge into the team's `feature/web-app` and redeploy their Node backend and Netlify frontend. There are no Python, Qdrant or Supabase schema changes. Optional `DATASET_SCOPE_TERMS` on the Node backend replaces the default topic list for a different dataset; retrieved station/source aliases remain supported. Keep Gemini optional.
