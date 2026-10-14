@@ -57,3 +57,11 @@ Gemini summaries must return an answerability decision and supporting record cit
 `top_k` is a maximum result count. It does not measure relevance. RRF values are rank-fusion scores, not probabilities, so an arbitrary RRF cutoff can retain unrelated top-ranked neighbours and discard useful keyword matches. The existing reranker supports a separately calibrated `PARAM_RERANK_MIN_SCORE` (see `calibrate_reranker.py`). Do not enable the previously memory-heavy reranker on the 512 MB host without capacity testing. No numeric threshold has been selected by these follow-up changes: that needs labelled in-domain, paraphrased, ambiguous and out-of-domain validation queries. Domain checks and answerability checks serve different purposes from a score cutoff.
 
 Deployment for this follow-up: merge into the team's `feature/web-app` and redeploy their Node backend and Netlify frontend. There are no Python, Qdrant or Supabase schema changes. Optional `DATASET_SCOPE_TERMS` on the Node backend replaces the default topic list for a different dataset; retrieved station/source aliases remain supported. Keep Gemini optional.
+
+## Follow-up: natural calculation questions
+
+The Node query router and Python calculation parser now recognize usual/typical duration as average duration, longest/shortest visits as maximum/minimum duration, time spent altogether as summed duration, and recorded visit counts as session counts. The UI shows the interpreted calculation so the user can see how a phrase such as "usually spend" was understood. Distinct visitor counts, ambiguous "how long" requests with no aggregate qualifier, and unsupported ranking requests fail with an explanation rather than inventing a metric.
+
+Summary numbers and average formulas now preserve fractional totals and avoid scientific notation. Example: `491,304.2 / 1,208`, not `491304 / 1208`.
+
+This follow-up changes both the Python service and website backend. Deploy the updated Python code first, then merge into `feature/web-app` and let the team deploy their backend/frontend. No database or index changes are required.

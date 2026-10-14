@@ -9,8 +9,8 @@ const TEAM_EMAILS = [
 ];
 
 export function isCalculation(query) {
-  return /\b(min(?:imum)?|max(?:imum)?|avg|average|mean|sum|total|count|highest|lowest|longest|shortest|how many|number of|median|percentile|busiest)\b/i.test(query)
-    && /\b(durations?|dwell|seconds?|minutes?|hours?|engaged time|press(?:es)?|interactions?|sessions?|runs?|records?|exhibits?)\b/i.test(query);
+  return /\b(min(?:imum)?|max(?:imum)?|avg|average|mean|usually|typical|typically|sum|total|altogether|combined|count|highest|lowest|longest|shortest|briefest|how many|number of|median|percentile|busiest)\b|\bin all\b/i.test(query)
+    && /\b(durations?|dwell|seconds?|minutes?|hours?|engaged time|engagement time|time spent|spend|spent|stay|stayed|press(?:es|ed)?|interactions?|sessions?|visits?|runs?|records?|exhibits?)\b|\bhow\s+long\b/i.test(query);
 }
 
 class ApiError extends Error {
