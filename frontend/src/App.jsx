@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Header from './components/Header';
 import SearchBar from './components/SearchBar';
 import ResultStats from './components/ResultStats';
@@ -10,6 +10,7 @@ import AuthModal from './components/AuthModal';
 import AnalyticsMetricsCard from './components/AnalyticsMetricsCard';
 import { useAuth } from './context/AuthContext';
 import { checkHealth, retrieveQuery } from './api';
+import { buildFilters, changeFilters, showResultControls, sortRows } from './resultControls';
 import { Search, Shield, CheckCircle2, AlertCircle, Info, Database, ChevronDown, ChevronUp, FileText } from 'lucide-react';
 import './App.css';
 
@@ -39,7 +40,7 @@ export default function App() {
   const [selectedSheet, setSelectedSheet] = useState('');
   const [selectedFile, setSelectedFile] = useState('');
   const [selectedExhibit, setSelectedExhibit] = useState('');
-  const [sortField, setSortField] = useState('duration');
+  const [sortField, setSortField] = useState('relevance');
   const [sortOrder, setSortOrder] = useState('asc');
   const [showSynthesis, setShowSynthesis] = useState(false);
   const [showRawJson, setShowRawJson] = useState(false);
@@ -120,12 +121,7 @@ export default function App() {
     const sheet = filterOverrides.sheet ?? selectedSheet;
     const file = filterOverrides.file ?? selectedFile;
     const exhibit = filterOverrides.exhibit ?? selectedExhibit;
-    const filters = {};
-    if (file) filters.source = file;
-    if (exhibit) filters.exhibit = exhibit;
-    if (sheet === 'Engagement Sheet') filters.source = 'engagement-sessions-2026-09-15.csv';
-    else if (sheet === 'Executive Report Sheet') filters.source = 'engagement-report-2026-09-15.pdf';
-    else if (sheet && sheet !== 'Result Sheet') filters.sheet = sheet;
+    const filters = buildFilters({ sheet, file, exhibit });
 
     // Warm-up timeout indicator for Render
     const spinTimer = setTimeout(() => {
@@ -191,68 +187,29 @@ export default function App() {
     }
   };
 
-  const handleSheetChange = (sheet) => {
-    setSelectedSheet(sheet);
-    handleSearch(submittedQuery || query, { sheet });
+  const handleFilterChange = (field, value) => {
+    const next = changeFilters({ sheet: selectedSheet, file: selectedFile,
+      exhibit: selectedExhibit }, field, value, results);
+    setSelectedSheet(next.sheet);
+    setSelectedFile(next.file);
+    setSelectedExhibit(next.exhibit);
+    handleSearch(submittedQuery || query, next);
   };
-  const handleExhibitChange = (exhibit) => {
-    setSelectedExhibit(exhibit);
-    handleSearch(submittedQuery || query, { exhibit });
-  };
-  const handleFileChange = (file) => {
-    setSelectedFile(file);
-    handleSearch(submittedQuery || query, { file });
-  };
+  const handleSheetChange = value => handleFilterChange('sheet', value);
+  const handleExhibitChange = value => handleFilterChange('exhibit', value);
+  const handleFileChange = value => handleFilterChange('file', value);
   const handleResetFilters = () => {
     setSelectedSheet('');
     setSelectedFile('');
     setSelectedExhibit('');
-    setSortField('duration');
+    setSortField('relevance');
     setSortOrder('asc');
     handleSearch(submittedQuery || query, { sheet: '', file: '', exhibit: '' });
   };
 
-  const filteredResults = useMemo(() => (results || []).filter((r) => {
-    const attrs = r.attributes || {};
-
-    // 1. Sheet Filter
-    if (selectedSheet) {
-      if (selectedSheet === 'Result Sheet') {
-        // All active retrieved results
-      } else if (selectedSheet === 'Engagement Sheet') {
-        const isMatch = (r.source || '').includes('engagement-sessions') || (r.locator || '').includes('engagement') || (r.text || '').includes('duration_s') || attrs.duration_s !== undefined;
-        if (!isMatch) return false;
-      } else if (selectedSheet === 'Executive Report Sheet') {
-        const isMatch = (r.source || '').includes('engagement-report') || (r.locator || '').includes('report') || (r.text || '').includes('report');
-        if (!isMatch) return false;
-      } else {
-        const target = selectedSheet.toLowerCase();
-        const loc = (r.locator || '').toLowerCase();
-        const attrSheet = (attrs.sheet || '').toLowerCase();
-        const text = (r.text || '').toLowerCase();
-        const isMatch = loc.includes(`sheet:${target}`) || loc.includes(target) || attrSheet === target || text.includes(target);
-        if (!isMatch) return false;
-      }
-    }
-
-    // 2. File Filter
-    if (selectedFile) {
-      if (r.source !== selectedFile) return false;
-    }
-
-    // 3. Exhibit Filter
-    if (selectedExhibit) {
-      const target = selectedExhibit.toLowerCase();
-      const exName = (attrs.display_name || attrs.exhibit_id || attrs.station || '').toLowerCase();
-      const loc = (r.locator || '').toLowerCase();
-      const text = (r.text || '').toLowerCase();
-      if (!exName.includes(target) && !loc.includes(target) && !text.includes(target)) {
-        return false;
-      }
-    }
-
-    return true;
-  }), [results, selectedSheet, selectedFile, selectedExhibit]);
+  // Both retrieval branches apply exact filters on the server. Do not hide or
+  // re-filter its results with different substring-matching rules in the UI.
+  const filteredResults = results;
 
   const dataRows = (filteredResults || []).map((r, idx) => {
     const attrs = r.attributes || {};
@@ -329,6 +286,7 @@ export default function App() {
     const pressesNum = presses ? parseInt(presses, 10) : null;
 
     return {
+      record: r,
       id: r.id || idx,
       exhibit: exhibit || (r.source ? r.source.replace(/\.[^.]+$/, '') : `Record #${idx + 1}`),
       sheet: sheetName || null,
@@ -341,27 +299,8 @@ export default function App() {
     };
   });
 
-  // Sort rows based on sortField and sortOrder (Ascending = Min at top, Descending = Max at top)
-  const sortedDataRows = [...dataRows].sort((a, b) => {
-    if (sortField === 'duration') {
-      const valA = a.durationNum !== null && !isNaN(a.durationNum) ? a.durationNum : (sortOrder === 'asc' ? Infinity : -Infinity);
-      const valB = b.durationNum !== null && !isNaN(b.durationNum) ? b.durationNum : (sortOrder === 'asc' ? Infinity : -Infinity);
-      return sortOrder === 'asc' ? valA - valB : valB - valA;
-    }
-    if (sortField === 'presses') {
-      const valA = a.pressesNum !== null && !isNaN(a.pressesNum) ? a.pressesNum : (sortOrder === 'asc' ? Infinity : -Infinity);
-      const valB = b.pressesNum !== null && !isNaN(b.pressesNum) ? b.pressesNum : (sortOrder === 'asc' ? Infinity : -Infinity);
-      return sortOrder === 'asc' ? valA - valB : valB - valA;
-    }
-    if (sortField === 'exhibit') {
-      const valA = (a.exhibit || '').toLowerCase();
-      const valB = (b.exhibit || '').toLowerCase();
-      if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
-      if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
-      return 0;
-    }
-    return 0;
-  });
+  // Cards and sample tables share the same order; relevance is the default.
+  const sortedDataRows = sortRows(dataRows, sortField, sortOrder);
 
   const handleHeaderSort = (field) => {
     if (sortField === field) {
@@ -458,7 +397,7 @@ export default function App() {
         )}
 
         {/* Results */}
-        {results.length > 0 || meta?._aggregate ? (
+        {showResultControls(results, meta, { sheet: selectedSheet, file: selectedFile, exhibit: selectedExhibit }) ? (
           <div className="results-section">
             <ResultStats
               results={results}
@@ -480,6 +419,13 @@ export default function App() {
               setShowRawJson={setShowRawJson}
               totalResultsCount={filteredResults.length}
             />
+
+            {!loading && !meta?._aggregate && filteredResults.length === 0 && (
+              <div className="empty-state" role="status">
+                <h3>{error ? 'Not Retrieved' : 'No Matching Records'}</h3>
+                <p>{error || notice || 'No records match this query and the selected filters. Change or reset the filters to try again.'}</p>
+              </div>
+            )}
 
             {/* Dedicated Telemetry Analytics & Whole Dataset Metrics Card */}
             {isAnalyticalMode && (
@@ -557,7 +503,7 @@ export default function App() {
             {/* Results File Cards List - only visible if showRawFiles is true */}
             {showRawFiles && (
               <div className="results-list">
-                {filteredResults.map((item, index) => (
+                {sortedDataRows.map(({ record: item }, index) => (
                   <ResultCard
                     key={item.id || index}
                     result={item}

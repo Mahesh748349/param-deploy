@@ -61,7 +61,7 @@ export default function ResultStats({
   selectedExhibit = '',
   setSelectedExhibit,
   onResetFilters,
-  sortField = 'duration',
+  sortField = 'relevance',
   setSortField,
   sortOrder = 'asc',
   setSortOrder,
@@ -314,18 +314,23 @@ export default function ResultStats({
               type="button"
               className={`param-dropdown-btn ${openDropdown === 'metric' ? 'active' : ''}`}
               onClick={() => toggleDropdown('metric')}
-              title="Select parameter to evaluate"
+              title="Sort the retrieved sample, not the whole dataset"
             >
               <ArrowUpDown size={13} className="param-icon text-purple" />
               <span className="param-label">
-                {sortField === 'duration' ? 'Metric: Duration (s)' : (sortField === 'presses' ? 'Metric: Interactions' : 'Metric: Station')}
+                {sortField === 'relevance' ? 'Sort: Relevance' : sortField === 'duration' ? 'Sort: Duration (s)' : (sortField === 'presses' ? 'Sort: Interactions' : 'Sort: Station')}
               </span>
               <ChevronDown size={13} className={`param-chevron ${openDropdown === 'metric' ? 'open' : ''}`} />
             </button>
 
             {openDropdown === 'metric' && (
               <div className="param-floating-menu">
-                <div className="param-menu-header">EVALUATION METRIC</div>
+                <div className="param-menu-header">SORT RETRIEVED SAMPLE</div>
+                <button type="button" className={`param-menu-item ${sortField === 'relevance' ? 'selected' : ''}`}
+                  onClick={() => { setSortField('relevance'); setOpenDropdown(null); }}>
+                  <span>Relevance (best matches first)</span>
+                  {sortField === 'relevance' && <Check size={14} className="text-emerald" />}
+                </button>
                 <button
                   type="button"
                   className={`param-menu-item ${sortField === 'duration' ? 'selected' : ''}`}
@@ -374,22 +379,22 @@ export default function ResultStats({
         )}
 
         {/* 5. Order: Ascending / Descending Toggle Button */}
-        {setSortOrder && (
+        {setSortOrder && sortField !== 'relevance' && (
           <button
             type="button"
             className={`param-order-toggle-btn ${sortOrder === 'asc' ? 'asc-mode' : 'desc-mode'}`}
             onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
-            title={`Current order: ${sortOrder === 'asc' ? 'Ascending (Minimum at top)' : 'Descending (Maximum at top)'}. Click to switch.`}
+            title="Changes the order of retrieved records only, not dataset-wide minimum or maximum"
           >
             {sortOrder === 'asc' ? (
               <>
                 <ArrowUp size={13} className="text-emerald" />
-                <span>Ascending (Min at top)</span>
+                <span>Ascending (retrieved sample)</span>
               </>
             ) : (
               <>
                 <ArrowDown size={13} className="text-indigo" />
-                <span>Descending (Max at top)</span>
+                <span>Descending (retrieved sample)</span>
               </>
             )}
           </button>
