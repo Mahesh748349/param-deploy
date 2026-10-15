@@ -13,6 +13,7 @@ from .config import Settings
 from .embeddings import FastEmbedder
 from .fusion import reciprocal_rank_fusion
 from .filters import SearchFilters
+from .constraints import validate_record_query
 from .reranking import Reranker, rerank_results
 from .parsers import IMAGE_SUFFIXES, PARSERS, parse
 from .state import LostLease, State
@@ -154,6 +155,7 @@ class Service:
     def retrieve(self, query, top_k=5, scope="text", process=False, filters=None):
         if not query.strip() or len(query) > 4000 or not 1 <= top_k <= 50 or scope not in {"text", "image", "all"}:
             raise ValueError("Invalid query, top_k or scope")
+        validate_record_query(query)
         results, limited = {}, False
         filters = filters if isinstance(filters, SearchFilters) else SearchFilters.model_validate(filters or {})
         filter_args = {"filters": filters.values()} if filters.values() else {}

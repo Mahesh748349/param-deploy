@@ -10,7 +10,7 @@ import AuthModal from './components/AuthModal';
 import AnalyticsMetricsCard from './components/AnalyticsMetricsCard';
 import { useAuth } from './context/AuthContext';
 import { checkHealth, retrieveQuery } from './api';
-import { buildFilters, changeFilters, showResultControls, sortRows } from './resultControls';
+import { buildFilters, changeFilters, filtersForSearch, showResultControls, sortRows } from './resultControls';
 import { Search, Shield, CheckCircle2, AlertCircle, Info, Database, ChevronDown, ChevronUp, FileText } from 'lucide-react';
 import './App.css';
 
@@ -118,10 +118,12 @@ export default function App() {
     searchController.current = controller;
     setResults([]);
     setMeta(null);
-    const sheet = filterOverrides.sheet ?? selectedSheet;
-    const file = filterOverrides.file ?? selectedFile;
-    const exhibit = filterOverrides.exhibit ?? selectedExhibit;
-    const filters = buildFilters({ sheet, file, exhibit });
+    const selection = filtersForSearch(trimmed, submittedQuery,
+      { sheet: selectedSheet, file: selectedFile, exhibit: selectedExhibit }, filterOverrides);
+    setSelectedSheet(selection.sheet);
+    setSelectedFile(selection.file);
+    setSelectedExhibit(selection.exhibit);
+    const filters = buildFilters(selection);
 
     // Warm-up timeout indicator for Render
     const spinTimer = setTimeout(() => {

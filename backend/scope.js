@@ -15,6 +15,25 @@ function containsPhrase(query, phrase) {
   return (` ${query} `).includes(` ${normalize(phrase)} `);
 }
 
+// Structured telemetry cannot explain unrelated concepts just because its vector
+// is the nearest neighbour. Prose remains eligible for semantic matching.
+const REQUEST_WORDS = new Set(('find information about show me a an the some few recorded records record mentioning '
+  + 'what does say tell explain describe please can could you i want to know of for and or at in from '
+  + 'visitor visitors activity usage visits visit sessions session exhibit exhibits data details involving').split(' '));
+const stem = word => word.length > 4 && word.endsWith('s') ? word.slice(0, -1) : word;
+export function filterEvidence(query, hits = []) {
+  const terms = normalize(query).split(' ').filter(word => word.length > 2 && !REQUEST_WORDS.has(word)
+    && !/^\d+$/.test(word)).map(stem);
+  const reportRequest = /\breport\b/i.test(query);
+  return hits.filter(hit => {
+    if (!Object.keys(hit.attributes || {}).length) return true;
+    const words = new Set(normalize([hit.source, hit.locator, hit.text,
+      JSON.stringify(hit.attributes)].join(' ')).split(' ').map(stem));
+    if (reportRequest && !words.has('report')) return false;
+    return !terms.length || terms.some(term => words.has(term));
+  });
+}
+
 export function queryScope(query, hits = [], configuredTerms) {
   const text = normalize(query);
   const terms = configuredTerms ? configuredTerms.split(',').map(term => term.trim()).filter(Boolean) : DEFAULT_TERMS;

@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
-import { queryScope, parseGroundedAnswer } from './scope.js';
+import { queryScope, parseGroundedAnswer, filterEvidence } from './scope.js';
 
 const TEAM_EMAILS = [
   'mantriramitha.cs24@bmsce.ac.in', 'mantriramitha17@gmail.com',
@@ -140,6 +140,10 @@ export function createApp(env = {}, fetchImpl = fetch) {
     const result = await callService('/v1/retrieve', { ...body, top_k, scope });
     const decision = queryScope(body.query, [...(result.text_results || []), ...(result.image_results || [])], env.DATASET_SCOPE_TERMS);
     if (!decision.allowed) return res.json(noEvidence(body.query, decision, result));
+    result.text_results = filterEvidence(body.query, result.text_results);
+    if (!result.text_results.length && !result.image_results?.length) return res.json(noEvidence(body.query, {
+      reason: 'no_supporting_evidence', message: 'No supporting records were found for this query and selected filters.'
+    }, result));
     // Preserve hybrid order and lexical-only hits. Cutoffs belong to the calibrated service.
     res.json({ ...result, _latency_ms: Date.now() - start, _is_live: true,
       filters: body.filters || {},
@@ -154,8 +158,8 @@ export function createApp(env = {}, fetchImpl = fetch) {
     }
     // Re-retrieve evidence on the server; do not trust chunks supplied by a client.
     const evidence = await callService('/v1/retrieve', { ...queryBody(req), top_k: 5, scope: 'text' });
-    const hits = evidence.text_results || [];
-    const decision = queryScope(query, hits, env.DATASET_SCOPE_TERMS);
+    const decision = queryScope(query, evidence.text_results || [], env.DATASET_SCOPE_TERMS);
+    const hits = filterEvidence(query, evidence.text_results);
     if (!decision.allowed) return res.json({ query, summary: decision.message,
       answer_supported: false, scope_decision: decision.reason, model: 'Evidence check', is_configured: true });
     const excerpts = hits.map((hit, index) => `[Record ${index + 1}] ${hit.source} (${hit.locator}): ${hit.text}`).join('\n\n');
