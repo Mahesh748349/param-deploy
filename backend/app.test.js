@@ -84,6 +84,23 @@ test('unsupported calculation errors are preserved as readable JSON', async () =
   }, url => url.includes('/auth/') ? json(verified) : json({ detail: 'Median is unsupported' }, 422));
 });
 
+test('irrelevant telemetry is removed from retrieval and the synthesis fallback', async () => {
+  await withApp(async post => {
+    for (const query of ['Find information about optical illusions and peripheral fading.',
+      'Find records mentioning Chromatic puzzle latency.']) {
+      const result = await (await post('/api/retrieve', { query })).json();
+      assert.deepEqual(result.text_results, []);
+      assert.equal(result.scope_decision, 'no_supporting_evidence');
+      const answer = await (await post('/api/synthesize', { query })).json();
+      assert.equal(answer.answer_supported, false);
+      assert.doesNotMatch(answer.summary, /Total Seconds/);
+    }
+  }, url => json(url.includes('/auth/') ? verified : { text_results: [
+    { source: 'Physical Exhibit.xlsx', locator: 'sheet:Kinetic Bug|row:2',
+      text: 'Total Seconds: 30', attributes: { 'Total Seconds': 30 } }
+  ] }));
+});
+
 test('Gemini outage and missing key return source excerpts without invented metrics', async () => {
   for (const config of [env, { ...env, GEMINI_API_KEY: 'fake-test-key' }]) {
     await withApp(async post => {
