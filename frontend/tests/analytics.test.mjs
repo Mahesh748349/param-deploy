@@ -23,3 +23,19 @@ test('analytics card renders computed values, evidence and an empty scope honest
     assert.doesNotMatch(empty, /1,329,443|743|167\.3/);
   } finally { await vite.close(); }
 });
+
+test('empty filtered results retain reset controls and relevance has no false min label', async () => {
+  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
+  try {
+    const { default: Stats } = await vite.ssrLoadModule('/src/components/ResultStats.jsx');
+    const html = renderToStaticMarkup(React.createElement(Stats, {
+      results: [], meta: { text_results: [] }, totalResultsCount: 0,
+      selectedSheet: 'Kinetic Bug', sortField: 'relevance',
+      setSortField() {}, setSortOrder() {}, onResetFilters() {}
+    }));
+    assert.match(html, /Reset Filters/);
+    assert.match(html, /Sheet: Kinetic Bug/);
+    assert.match(html, /Sort: Relevance/);
+    assert.doesNotMatch(html, /Min at top|Max at top/);
+  } finally { await vite.close(); }
+});
