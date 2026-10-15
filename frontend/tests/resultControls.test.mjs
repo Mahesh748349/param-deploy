@@ -1,8 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildFilters, changeFilters, showResultControls, sortRows } from '../src/resultControls.js';
+import { buildFilters, changeFilters, filtersForSearch, showResultControls, sortRows } from '../src/resultControls.js';
 
 const empty = { sheet: '', file: '', exhibit: '' };
+
+test('a different typed or history query clears previous filters; dropdown searches retain them', () => {
+  const current = { sheet: 'Kinetic Bug', file: 'Physical Exhibit.xlsx', exhibit: '' };
+  assert.deepEqual(filtersForSearch('optical illusions', 'Bug usage', current), empty);
+  assert.deepEqual(filtersForSearch('Bug usage', 'Bug usage', current), current);
+  assert.deepEqual(filtersForSearch('Bug usage', 'Bug usage', current, { sheet: '' }),
+    { ...current, sheet: '' });
+  assert.deepEqual(filtersForSearch('new query', 'old query', current, { ...empty }), empty);
+});
 
 test('changing file clears an incompatible sheet and sends the selected file', () => {
   const next = changeFilters({ ...empty, sheet: 'Engagement Sheet' }, 'file', 'Physical Exhibit.xlsx');

@@ -34,6 +34,13 @@ export function showResultControls(results, meta, filters) {
   return Boolean(results.length || meta || filters.sheet || filters.file || filters.exhibit);
 }
 
+export function filtersForSearch(query, previousQuery, current, overrides = {}) {
+  // Dropdown changes explicitly pass overrides; a different typed/history query
+  // starts a fresh search instead of silently inheriting a previous station.
+  const fresh = query.trim() !== previousQuery.trim() && Object.keys(overrides).length === 0;
+  return { ...(fresh ? { sheet: '', file: '', exhibit: '' } : current), ...overrides };
+}
+
 export function sortRows(rows, field, order) {
   if (field === 'relevance') return [...rows];
   return [...rows].sort((a, b) => {
